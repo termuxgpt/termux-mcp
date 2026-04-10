@@ -1,7 +1,7 @@
 <div align="center">
-
+<a href="https://play.google.com/store/apps/details?id=com.codeninja.termuxtutor"><img src="https://raw.githubusercontent.com/Bhai4You/bhai4you/refs/heads/master/termux-mcp.png" alt="Termux Tutor"  ></a>
+  
 # Termux MCP
-
 **Turn your Android phone into an AI-controlled Linux terminal.**
 
 A lightweight HTTP server that exposes Termux shell as a streaming API —
