@@ -21,9 +21,9 @@ class MCPHandler(BaseHTTPRequestHandler):
     def _read_json(self) -> dict:
         try:
             length = int(self.headers.get("Content-Length", 0))
-            raw = self.rfile.read(length).decode()
+            raw = self.rfile.read(length).decode("utf-8", errors="ignore")
 
-            self._log(f"📦 Raw body: {raw}")
+            self._log(f"Request body: {raw}")
 
             if not raw:
                 return {}
@@ -31,11 +31,11 @@ class MCPHandler(BaseHTTPRequestHandler):
             return json.loads(raw)
 
         except Exception as e:
-            self._log(f"❌ JSON read error: {e}")
+            self._log(f"JSON read error: {e}")
             return {}
 
     def _json_response(self, status: int, payload: dict) -> None:
-        body = json.dumps(payload).encode()
+        body = json.dumps(payload).encode("utf-8")
 
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -46,7 +46,7 @@ class MCPHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
-        self._log(f"➡️ GET {path}")
+        self._log(f"GET {path}")
 
         if path == "/ping":
             self._json_response(200, {
@@ -59,10 +59,10 @@ class MCPHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
-        self._log(f"➡️ POST {path}")
+        self._log(f"POST {path}")
 
         data = self._read_json()
-        self._log(f"📨 Parsed JSON: {data}")
+        self._log(f"Parsed JSON: {data}")
 
         if path == "/run":
             cmd = data.get("cmd", "").strip()
@@ -71,8 +71,7 @@ class MCPHandler(BaseHTTPRequestHandler):
                 self._json_response(400, {"error": "Missing 'cmd'"})
                 return
 
-            self._log(f"⚡ Executing: {cmd}")
-
+            self._log(f"Executing: {cmd}")
             self._handle_stream(cmd)
             return
 
@@ -81,11 +80,9 @@ class MCPHandler(BaseHTTPRequestHandler):
     def _handle_stream(self, cmd: str):
         try:
             self.send_response(200)
-            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
-
-            self._write("🚀 Command started...\n")
 
             process = subprocess.Popen(
                 cmd,
@@ -100,24 +97,23 @@ class MCPHandler(BaseHTTPRequestHandler):
                 if not line:
                     break
 
-                self._log(f"📤 {line.strip()}")
+                self._log(f"OUT: {line.strip()}")
                 self._write(line)
 
             process.wait()
 
-            self._write("\n✅ Done\n")
-            self._log("✅ Command finished")
+            self._log(f"Command finished with code {process.returncode}")
 
         except Exception as e:
-            error_msg = f"\n❌ ERROR: {e}\n"
+            error_msg = f"ERROR: {e}\n"
             self._log(error_msg)
             self._write(error_msg)
 
     def _write(self, text: str):
         try:
-            self.wfile.write(text.encode())
-            self.wfile.flush() 
+            self.wfile.write(text.encode("utf-8", errors="ignore"))
+            self.wfile.flush()
         except BrokenPipeError:
-            self._log("⚠️ Client disconnected")
+            self._log("Client disconnected")
         except Exception as e:
-            self._log(f"❌ Write error: {e}")
+            self._log(f"Write error: {e}")
