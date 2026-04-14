@@ -27,7 +27,6 @@ def _inject_noninteractive(cmd: str) -> str:
 
 
 def _inject_auto_yes(cmd: str) -> str:
-    """Add -y to package manager commands that don't already have it."""
     for trigger in AUTO_YES_COMMANDS:
         if trigger in cmd and "-y" not in cmd:
             cmd = cmd.replace(trigger, f"{trigger} -y")
@@ -41,7 +40,6 @@ def preprocess(cmd: str) -> str:
 
 
 def handle_cd(parts: list[str]) -> tuple[bool, str]:
-
     if len(parts) == 1:
         set_current_dir(HOME)
         return True, f"📂 {_current_dir}"
@@ -70,7 +68,6 @@ def _finalize_chunks(handler: "BaseHTTPRequestHandler") -> None:
 
 
 def _spawn_auto_input(process: subprocess.Popen) -> None:
- 
     def _worker() -> None:
         try:
             while process.poll() is None:
@@ -87,13 +84,10 @@ def _spawn_auto_input(process: subprocess.Popen) -> None:
     threading.Thread(target=_worker, daemon=True).start()
 
 
- 
 def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
- 
-
     raw_cmd = raw_cmd.strip()
 
-     if raw_cmd.startswith("cd"):
+    if raw_cmd.startswith("cd"):
         ok, msg = handle_cd(raw_cmd.split(maxsplit=1))
         handler.send_response(200)
         handler.send_header("Content-Type", "text/plain")
@@ -101,7 +95,7 @@ def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
         handler.wfile.write((msg + "\n").encode())
         return
 
-     handler.send_response(200)
+    handler.send_response(200)
     handler.send_header("Content-Type", "text/plain")
     handler.send_header("Transfer-Encoding", "chunked")
     handler.end_headers()
@@ -120,7 +114,7 @@ def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
 
     _spawn_auto_input(process)
 
-     while True:
+    while True:
         line = process.stdout.readline()
 
         if not line and process.poll() is not None:
@@ -132,9 +126,9 @@ def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
 
     process.wait()
 
-     if process.returncode == 0:
-        _send_chunk(handler, "\n✅ Done\n")
+    if process.returncode == 0:
+        _send_chunk(handler, "\nDone\n")
     else:
-        _send_chunk(handler, f"\n❌ Exit code: {process.returncode}\n")
+        _send_chunk(handler, f"\nExit code: {process.returncode}\n")
 
     _finalize_chunks(handler)
