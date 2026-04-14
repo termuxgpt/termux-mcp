@@ -87,35 +87,17 @@ def _spawn_auto_input(process: subprocess.Popen) -> None:
     threading.Thread(target=_worker, daemon=True).start()
 
 
-_INSTALL_HINTS: list[tuple[str, str]] = [
-    ("get:", "📦 Downloading packages...\n"),
-    ("fetch", "📦 Downloading packages...\n"),
-    ("unpacking", "⚙️  Installing dependencies...\n"),
-    ("setting up", "⚙️  Finalizing setup...\n"),
-]
-
-
-def _install_hint(line: str) -> str | None:
-    lower = line.lower()
-    for keyword, hint in _INSTALL_HINTS:
-        if keyword in lower:
-            return hint
-    if "error" in lower:
-        return f"❌ {line.strip()}\n"
-    return None
-
-
 # APIs
 
 def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
     """
-    Execute *raw_cmd* and stream output to *handler* using chunked transfer.
+    Execute *raw_cmd* and stream every real output line to *handler* using
+    chunked transfer encoding.
 
-    Handles:
-      - `cd` as a special built-in (no subprocess spawned)
-      - Chunked HTTP streaming for all other commands
-      - Auto-input thread for interactive prompts
-      - Friendly progress hints during package installs
+    FIX: removed the _INSTALL_HINTS substitution that replaced real Termux
+    output with fake strings like "📦 Downloading packages..." — the client
+    now receives the actual raw lines from pkg/apt/pip/git so users see
+    exactly what Termux is doing.
     """
     raw_cmd = raw_cmd.strip()
 
@@ -133,10 +115,6 @@ def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
     handler.end_headers()
 
     cmd = preprocess(raw_cmd)
-    is_install = "install" in cmd
-
-    if is_install:
-        _send_chunk(handler, "🚀 Processing request...\n\n")
 
     process = subprocess.Popen(
         f"export PAGER=cat; {cmd}",
@@ -150,20 +128,16 @@ def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
 
     _spawn_auto_input(process)
 
+    # Stream every line exactly as Termux produces it — no filtering,
+    # no substitution, no hints.
     for line in process.stdout:
-        if is_install:
-            hint = _install_hint(line)
-            if hint:
-                _send_chunk(handler, hint)
-        else:
-            _send_chunk(handler, line)
+        _send_chunk(handler, line)
 
     process.wait()
 
-    if process.returncode == 0:
-        if is_install:
-            _send_chunk(handler, "✅ Completed successfully\n")
+    if process.returncode != 0:
+        _send_chunk(handler, f"\nExit code: {process.returncode}\n")
     else:
-        _send_chunk(handler, f"❌ Command failed (exit {process.returncode})\n")
+        _send_chunk(handler, "\nDone\n")
 
     _finalize_chunks(handler)
