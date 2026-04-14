@@ -1,26 +1,28 @@
 import socket
 import subprocess
-import time
-
-from .config import PORT_POLL_INTERVAL
 
 
 def kill_port(port: int) -> None:
     try:
-        result = subprocess.run(
-            f"lsof -t -i:{port}",
+        subprocess.run(
+            f"pkill -9 -f {port}",
             shell=True,
-            capture_output=True,
-            text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=2
         )
-        for pid in result.stdout.strip().splitlines():
-            if pid:
-                subprocess.run(f"kill -9 {pid}", shell=True, check=False)
-    except Exception:
+    except:
         pass
 
-    while True:
+    try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(("127.0.0.1", port)) != 0:
-                return
-        time.sleep(PORT_POLL_INTERVAL)
+            if sock.connect_ex(("127.0.0.1", port)) == 0:
+                subprocess.run(
+                    f"pkill -9 -f {port}",
+                    shell=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=2
+                )
+    except:
+        pass
