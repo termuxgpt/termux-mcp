@@ -1,28 +1,25 @@
-import socket
 import subprocess
 
 
-def kill_port(port: int) -> None:
+def kill_port(port: int):
     try:
-        subprocess.run(
-            f"pkill -9 -f {port}",
+        result = subprocess.run(
+            f"lsof -ti:{port}",
             shell=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=2
+            capture_output=True,
+            text=True
         )
-    except:
-        pass
 
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(("127.0.0.1", port)) == 0:
+        pids = result.stdout.strip().split("\n")
+
+        for pid in pids:
+            if pid:
                 subprocess.run(
-                    f"pkill -9 -f {port}",
+                    f"kill -9 {pid}",
                     shell=True,
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    timeout=2
+                    stderr=subprocess.DEVNULL
                 )
+
     except:
         pass
