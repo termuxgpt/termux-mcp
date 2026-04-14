@@ -21,12 +21,13 @@ def set_current_dir(path: str) -> None:
     global _current_dir
     _current_dir = path
 
-
 def _inject_noninteractive(cmd: str) -> str:
+    """Prepend DEBIAN_FRONTEND=noninteractive so apt/pkg never stall."""
     return f"export DEBIAN_FRONTEND=noninteractive; {cmd}"
 
 
 def _inject_auto_yes(cmd: str) -> str:
+    """Add -y to package manager commands that don't already have it."""
     for trigger in AUTO_YES_COMMANDS:
         if trigger in cmd and "-y" not in cmd:
             cmd = cmd.replace(trigger, f"{trigger} -y")
@@ -40,6 +41,12 @@ def preprocess(cmd: str) -> str:
 
 
 def handle_cd(parts: list[str]) -> tuple[bool, str]:
+    """
+    Parse a `cd` command.
+
+    Returns (success, message).
+    On success the global _current_dir is updated.
+    """
     if len(parts) == 1:
         set_current_dir(HOME)
         return True, f"📂 {_current_dir}"
@@ -55,7 +62,6 @@ def handle_cd(parts: list[str]) -> tuple[bool, str]:
 
     return False, f"❌ Directory not found: {new_path}"
 
-
 def _send_chunk(handler: "BaseHTTPRequestHandler", text: str) -> None:
     data = text.encode()
     size = hex(len(data))[2:].encode()
@@ -66,25 +72,51 @@ def _send_chunk(handler: "BaseHTTPRequestHandler", text: str) -> None:
 def _finalize_chunks(handler: "BaseHTTPRequestHandler") -> None:
     handler.wfile.write(b"0\r\n\r\n")
 
-
 def _spawn_auto_input(process: subprocess.Popen) -> None:
+    """Periodically write 'y\\n' to stdin so interactive prompts don't hang."""
+
     def _worker() -> None:
         try:
             while process.poll() is None:
                 time.sleep(AUTO_INPUT_INTERVAL)
-                if process.stdin:
-                    try:
-                        process.stdin.write("y\n")
-                        process.stdin.flush()
-                    except:
-                        break
-        except:
+                process.stdin.write("y\n")
+                process.stdin.flush()
+        except Exception:
             pass
 
     threading.Thread(target=_worker, daemon=True).start()
 
 
+_INSTALL_HINTS: list[tuple[str, str]] = [
+    ("get:", "📦 Downloading packages...\n"),
+    ("fetch", "📦 Downloading packages...\n"),
+    ("unpacking", "⚙️  Installing dependencies...\n"),
+    ("setting up", "⚙️  Finalizing setup...\n"),
+]
+
+
+def _install_hint(line: str) -> str | None:
+    lower = line.lower()
+    for keyword, hint in _INSTALL_HINTS:
+        if keyword in lower:
+            return hint
+    if "error" in lower:
+        return f"❌ {line.strip()}\n"
+    return None
+
+
+# APIs
+
 def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
+    """
+    Execute *raw_cmd* and stream output to *handler* using chunked transfer.
+
+    Handles:
+      - `cd` as a special built-in (no subprocess spawned)
+      - Chunked HTTP streaming for all other commands
+      - Auto-input thread for interactive prompts
+      - Friendly progress hints during package installs
+    """
     raw_cmd = raw_cmd.strip()
 
     if raw_cmd.startswith("cd"):
@@ -101,6 +133,10 @@ def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
     handler.end_headers()
 
     cmd = preprocess(raw_cmd)
+    is_install = "install" in cmd
+
+    if is_install:
+        _send_chunk(handler, "🚀 Processing request...\n\n")
 
     process = subprocess.Popen(
         f"export PAGER=cat; {cmd}",
@@ -114,21 +150,20 @@ def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
 
     _spawn_auto_input(process)
 
-    while True:
-        line = process.stdout.readline()
-
-        if not line and process.poll() is not None:
-            break
-
-        if line:
-            clean = line.replace("\r", "")
-            _send_chunk(handler, clean)
+    for line in process.stdout:
+        if is_install:
+            hint = _install_hint(line)
+            if hint:
+                _send_chunk(handler, hint)
+        else:
+            _send_chunk(handler, line)
 
     process.wait()
 
     if process.returncode == 0:
-        _send_chunk(handler, "\nDone\n")
+        if is_install:
+            _send_chunk(handler, "✅ Completed successfully\n")
     else:
-        _send_chunk(handler, f"\nExit code: {process.returncode}\n")
+        _send_chunk(handler, f"❌ Command failed (exit {process.returncode})\n")
 
     _finalize_chunks(handler)
