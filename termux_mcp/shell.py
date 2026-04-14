@@ -2,6 +2,7 @@ import os
 import subprocess
 import threading
 import time
+import signal
 from typing import TYPE_CHECKING
 
 from .config import AUTO_INPUT_INTERVAL, AUTO_YES_COMMANDS, HOME
@@ -21,13 +22,13 @@ def set_current_dir(path: str) -> None:
     global _current_dir
     _current_dir = path
 
+
+   
 def _inject_noninteractive(cmd: str) -> str:
-    """Prepend DEBIAN_FRONTEND=noninteractive so apt/pkg never stall."""
     return f"export DEBIAN_FRONTEND=noninteractive; {cmd}"
 
 
 def _inject_auto_yes(cmd: str) -> str:
-    """Add -y to package manager commands that don't already have it."""
     for trigger in AUTO_YES_COMMANDS:
         if trigger in cmd and "-y" not in cmd:
             cmd = cmd.replace(trigger, f"{trigger} -y")
@@ -40,13 +41,8 @@ def preprocess(cmd: str) -> str:
     return cmd
 
 
+   
 def handle_cd(parts: list[str]) -> tuple[bool, str]:
-    """
-    Parse a `cd` command.
-
-    Returns (success, message).
-    On success the global _current_dir is updated.
-    """
     if len(parts) == 1:
         set_current_dir(HOME)
         return True, f"📂 {_current_dir}"
@@ -62,6 +58,8 @@ def handle_cd(parts: list[str]) -> tuple[bool, str]:
 
     return False, f"❌ Directory not found: {new_path}"
 
+
+ 
 def _send_chunk(handler: "BaseHTTPRequestHandler", text: str) -> None:
     data = text.encode()
     size = hex(len(data))[2:].encode()
@@ -72,35 +70,50 @@ def _send_chunk(handler: "BaseHTTPRequestHandler", text: str) -> None:
 def _finalize_chunks(handler: "BaseHTTPRequestHandler") -> None:
     handler.wfile.write(b"0\r\n\r\n")
 
-def _spawn_auto_input(process: subprocess.Popen) -> None:
-    """Periodically write 'y\\n' to stdin so interactive prompts don't hang."""
 
-    def _worker() -> None:
+ 
+def _spawn_auto_input(process: subprocess.Popen) -> None:
+    def _worker():
         try:
             while process.poll() is None:
                 time.sleep(AUTO_INPUT_INTERVAL)
-                process.stdin.write("y\n")
-                process.stdin.flush()
-        except Exception:
+                if process.stdin:
+                    try:
+                        process.stdin.write("y\n")
+                        process.stdin.flush()
+                    except:
+                        break
+        except:
             pass
 
     threading.Thread(target=_worker, daemon=True).start()
 
 
-# APIs
+ 
+def kill_all_servers():
+    """
+    Kill ALL possible running servers / ports
+    """
+    commands = [
+        "pkill -9 -f 8080",
+        "pkill -9 -f node",
+        "pkill -9 -f python",
+        "pkill -9 -f php",
+        "pkill -9 -f uvicorn",
+        "pkill -9 -f flask",
+        "pkill -9 -f http.server",
+        "fuser -k 8080/tcp",
+    ]
 
+    for cmd in commands:
+        subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+ 
 def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
-    """
-    Execute *raw_cmd* and stream every real output line to *handler* using
-    chunked transfer encoding.
-
-    FIX: removed the _INSTALL_HINTS substitution that replaced real Termux
-    output with fake strings like "📦 Downloading packages..." — the client
-    now receives the actual raw lines from pkg/apt/pip/git so users see
-    exactly what Termux is doing.
-    """
     raw_cmd = raw_cmd.strip()
 
+    # Handle cd separately
     if raw_cmd.startswith("cd"):
         ok, msg = handle_cd(raw_cmd.split(maxsplit=1))
         handler.send_response(200)
@@ -114,9 +127,13 @@ def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
     handler.send_header("Transfer-Encoding", "chunked")
     handler.end_headers()
 
-    cmd = preprocess(raw_cmd)
+     _send_chunk(handler, "🛑 Killing running servers...\n")
+    kill_all_servers()
 
-    process = subprocess.Popen(
+     cmd = preprocess(raw_cmd)
+    _send_chunk(handler, f"⚙️ Running: {cmd}\n\n")
+
+     process = subprocess.Popen(
         f"export PAGER=cat; {cmd}",
         shell=True,
         stdout=subprocess.PIPE,
@@ -124,20 +141,39 @@ def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
         stdin=subprocess.PIPE,
         text=True,
         cwd=_current_dir,
+        preexec_fn=os.setsid
     )
 
     _spawn_auto_input(process)
 
-    # Stream every line exactly as Termux produces it — no filtering,
-    # no substitution, no hints.
-    for line in process.stdout:
-        _send_chunk(handler, line)
+     try:
+        while True:
+            line = process.stdout.readline()
 
-    process.wait()
+            if not line and process.poll() is not None:
+                break
 
-    if process.returncode != 0:
-        _send_chunk(handler, f"\nExit code: {process.returncode}\n")
-    else:
+            if line:
+                _send_chunk(handler, line)
+
+         try:
+            process.wait(timeout=60)
+        except subprocess.TimeoutExpired:
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+            _send_chunk(handler, "\nProcess killed (timeout)\n")
+
+    except Exception as e:
+        _send_chunk(handler, f"\nError: {str(e)}\n")
+
+    finally:
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        except:
+            pass
+
+     if process.returncode == 0:
         _send_chunk(handler, "\nDone\n")
+    else:
+        _send_chunk(handler, f"\nExit code: {process.returncode}\n")
 
     _finalize_chunks(handler)
