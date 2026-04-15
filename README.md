@@ -36,7 +36,7 @@ AI / API Call ──►  POST /run {"cmd": "ls -la"}  ──►  TermuxMCP  ─�
 ### 1 — Install in Termux
 
 ```bash
-pkg update && pkg install python git -y;git clone https://github.com/Bhai4You/termux-mcp;cd termux-mcp;python -m termux_mcp
+pkg update && pkg install python git -y;git clone https://github.com/termuxgpt/termux-mcp;cd termux-mcp;python -m termux_mcp
 ```
 
 ### 2 — Test it
