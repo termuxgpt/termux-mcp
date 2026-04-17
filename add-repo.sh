@@ -1,8 +1,7 @@
 #!/bin/sh
 
 REPO_NAME="termux-mcp"
-REPO_URL="https://raw.githubusercontent.com/termuxgpt/termux-mcp/main"
-
+REPO_URL="https://termux-mcp.pages.dev"
 echo "Adding $REPO_NAME repository to Termux..."
 mkdir -p $PREFIX/etc/apt/sources.list.d
 cat > $PREFIX/etc/apt/sources.list.d/$REPO_NAME.list << EOF
