@@ -1,0 +1,15 @@
+Package: termux-mcp
+Architecture: all
+Version: 1.0
+Maintainer: Parixit Sutariya
+Installed-Size: 94
+Depends: python
+Filename: ./termux-mcp_1.0_all.deb
+Size: 5296
+MD5sum: 7df22ba1e9b592dc2844bba8e2896da9
+SHA1: e158fe2e1173649b7de48613e4093a77dc8c68b6
+SHA256: fe289dde7b01134334e14472ba317ea1f8e59bdf40bb75b4ee7a8d4639e9a961
+SHA512: 3abcd2fdfca5e159cca8c516b6c662d964b8016ccd48ab8d21083a99c1ba2cf238404dce87703c7d98902a89fce27ceef99a0a5b98aeac7b48860af20b155f74
+Homepage: https://github.com/termuxgpt/termux-mcp
+Description: MCP server for Termux that allows AI to execute shell commands in Termux
+
