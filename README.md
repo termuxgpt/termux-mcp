@@ -2,7 +2,7 @@
 <a href="https://play.google.com/store/apps/details?id=com.codeninja.termuxtutor"><img src="https://raw.githubusercontent.com/Bhai4You/bhai4you/refs/heads/master/termux-mcp.png" alt="Termux Tutor"  ></a>
    
 
-A lightweight HTTP server that exposes Termux shell as a streaming API —
+A lightweight HTTP server that exposes Termux as a streaming API —
 built to pair with AI agents, Claude, or Postman.
 
 [![Python](https://img.shields.io/badge/Python-3.8+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
