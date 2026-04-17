@@ -1,0 +1,8 @@
+Origin: Termux MCP
+Label: Termux MCP
+Suite: stable
+Codename: stable
+Architectures: all
+Components: main
+Description: Termux MCP - Official repository for TermuxGPT
+Date: Fri, 17 Apr 2026 13:00:00 +0000
