@@ -5,7 +5,7 @@ Codename: stable
 Architectures: all
 Components: main
 Description: Termux MCP - MCP server for TermuxGPT
-Date: Fri, 17 Apr 2026 14:30:00 +0000
+Date: Fri, 17 Apr 2026 13:40:00 +0000
 MD5Sum:
  e9bec7648a338f7e3b5baa0beeef69b6 596 Packages
  e96527c93ad9140c237b6a6bbe3f3917 442 Packages.gz
