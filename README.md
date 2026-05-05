@@ -39,8 +39,8 @@ AI / API Call ──►  POST /run {"cmd": "ls -la"}  ──►  TermuxMCP  ─�
 pkg update && pkg install python git -y;git clone https://github.com/termuxgpt/termux-mcp;cd termux-mcp;python -m termux_mcp
 ```
 ### or Try below method (recommended)
-```curl -L
-curl -fsSL https://termux-mcp.pages.dev/add-repo.sh | bash
+```
+curl -fSL https://termux-mcp.pages.dev/add-repo.sh | bash
 ```
 ```
 pkg install termux-mcp
