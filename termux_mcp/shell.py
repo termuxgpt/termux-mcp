@@ -149,6 +149,7 @@ def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
 
 
 def _run_process(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
+    global _active_pid
     cmd = preprocess(raw_cmd)
     process = None
 
@@ -165,7 +166,6 @@ def _run_process(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
         )
 
         with _pid_lock:
-            global _active_pid
             _active_pid = process.pid
 
         _spawn_auto_input(process)
@@ -192,6 +192,5 @@ def _run_process(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
         _send_chunk(handler, f"\n❌ Error: {e}\n")
     finally:
         with _pid_lock:
-            global _active_pid
             _active_pid = None
         _finalize_chunks(handler)
