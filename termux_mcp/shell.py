@@ -134,10 +134,13 @@ def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
                     return
                 break
 
+        body = (msg + "\n").encode()
         handler.send_response(200)
         handler.send_header("Content-Type", "text/plain")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.send_header("Connection", "close")
         handler.end_headers()
-        handler.wfile.write((msg + "\n").encode())
+        handler.wfile.write(body)
         return
 
     handler.send_response(200)
