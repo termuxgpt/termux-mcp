@@ -18,8 +18,8 @@ DANGEROUS_PATTERNS = [
 
     r':\(\)\s*\{\s*:\|\s*&\s*\};:',          # Classic fork bomb
 
-    r'>\s*/dev/',                            # Redirect to /dev/*
-    r'echo\s+.*>\s*/dev/',
+    r'>\s*/dev/(?!null)',                    # Redirect to /dev/* (not /dev/null)
+    r'echo\s+.*>\s*/dev/(?!null)',
 
     r'chmod\s+-R\s+777',                     # chmod -R 777 /
     r'chmod\s+-R\s+000',
