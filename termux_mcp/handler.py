@@ -435,10 +435,12 @@ class MCPHandler(BaseHTTPRequestHandler):
 
     def _handle_ls(self, data: dict) -> None:
         path = (data.get("path") or ".").strip()
+        detailed = data.get("detailed", False)
         if not self._is_safe_path(path):
             self._json_response(403, {"error": "Path not allowed"})
             return
-        execute_streaming(self, f'ls -la {_shell_quote(path)} 2>/dev/null || echo "Cannot access: {path}"')
+        flags = "-la" if detailed else "-1"
+        execute_streaming(self, f'ls {flags} {_shell_quote(path)} 2>/dev/null || echo "Cannot access: {path}"')
 
     def _handle_read(self, data: dict) -> None:
         path = (data.get("path") or "").strip()
