@@ -440,7 +440,7 @@ class MCPHandler(BaseHTTPRequestHandler):
             self._json_response(403, {"error": "Path not allowed"})
             return
         flags = "-la" if detailed else "-1"
-        execute_streaming(self, f'ls {flags} {_shell_quote(path)} 2>/dev/null || echo "Cannot access: {path}"')
+        execute_streaming(self, f'ls {flags} {_shell_quote(path)} 2>/dev/null || echo Cannot access: {_shell_quote(path)}')
 
     def _handle_read(self, data: dict) -> None:
         path = (data.get("path") or "").strip()
@@ -450,7 +450,7 @@ class MCPHandler(BaseHTTPRequestHandler):
         if not self._is_safe_path(path):
             self._json_response(403, {"error": "Path not allowed"})
             return
-        execute_streaming(self, f'head -n 500 {_shell_quote(path)} 2>/dev/null || echo "Cannot read: {path}"')
+        execute_streaming(self, f'head -n 500 {_shell_quote(path)} 2>/dev/null || echo Cannot read: {_shell_quote(path)}')
 
     def _handle_write(self, data: dict) -> None:
         path = (data.get("path") or "").strip()
@@ -467,7 +467,7 @@ class MCPHandler(BaseHTTPRequestHandler):
             self,
             f'mkdir -p "$(dirname {_shell_quote(path)})" 2>/dev/null; '
             f'echo {_shell_quote(encoded)} | base64 -d > {_shell_quote(path)} && '
-            f'echo "Written: {path}"'
+            f'echo Written: {_shell_quote(path)}'
         )
 
     def _handle_mkdir(self, data: dict) -> None:
@@ -478,7 +478,7 @@ class MCPHandler(BaseHTTPRequestHandler):
         if not self._is_safe_path(path):
             self._json_response(403, {"error": "Path not allowed"})
             return
-        execute_streaming(self, f'mkdir -p {_shell_quote(path)} && echo "Created: {path}"')
+        execute_streaming(self, f'mkdir -p {_shell_quote(path)} && echo Created: {_shell_quote(path)}')
 
     def _handle_delete(self, data: dict) -> None:
         path = (data.get("path") or "").strip()
@@ -500,7 +500,7 @@ class MCPHandler(BaseHTTPRequestHandler):
             self._json_response(403, {"error": "Path not allowed"})
             return
         flags = "-rf" if recursive else ""
-        execute_streaming(self, f'rm {flags} {_shell_quote(path)} 2>/dev/null && echo "Deleted: {path}" || echo "Failed to delete: {path}"')
+        execute_streaming(self, f'rm {flags} {_shell_quote(path)} 2>/dev/null && echo Deleted: {_shell_quote(path)} || echo Failed to delete: {_shell_quote(path)}')
 
     def _handle_search(self, data: dict) -> None:
         path = (data.get("path") or ".").strip()
@@ -522,7 +522,7 @@ class MCPHandler(BaseHTTPRequestHandler):
     def _handle_camera_photo(self, data: dict) -> None:
         camera_id = str(data.get("camera_id", 0))
         output = data.get("output", "").strip() or "/sdcard/DCIM/termux_photo.jpg"
-        execute_streaming(self, f"termux-camera-photo -c {camera_id} {_shell_quote(output)} 2>/dev/null || echo 'Camera photo failed'")
+        execute_streaming(self, f"termux-camera-photo -c {_shell_quote(camera_id)} {_shell_quote(output)} 2>/dev/null || echo Camera photo failed")
 
     def _handle_camera_info(self, data: dict) -> None:
         execute_streaming(self, "termux-camera-info 2>/dev/null || echo '{}'")
@@ -580,7 +580,7 @@ class MCPHandler(BaseHTTPRequestHandler):
         if not url:
             self._json_response(400, {"error": "Missing 'url'"})
             return
-        execute_streaming(self, f"termux-open-url {_shell_quote(url)} 2>/dev/null && echo 'Opened: {url}' || echo 'Failed to open'")
+        execute_streaming(self, f"termux-open-url {_shell_quote(url)} 2>/dev/null && echo Opened: {_shell_quote(url)} || echo Failed to open")
 
     # ── Device Control & Info ──────────────────────────────────────────────
 

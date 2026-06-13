@@ -1,5 +1,4 @@
 import os
-import secrets
 
 PORT: int = int(os.environ.get("TERMUX_MCP_PORT", 8080))
 HOST: str = os.environ.get("TERMUX_MCP_HOST", "127.0.0.1")

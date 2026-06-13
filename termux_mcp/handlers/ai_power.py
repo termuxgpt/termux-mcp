@@ -7,7 +7,7 @@ these handlers expose the TERMINAL CAPABILITIES the AI needs.
 import os
 from typing import TYPE_CHECKING
 
-from ..shell import execute_streaming, get_current_dir, cancel_active
+from ..shell import execute_streaming, get_current_dir
 
 if TYPE_CHECKING:
     from http.server import BaseHTTPRequestHandler
@@ -217,7 +217,7 @@ def handle_profile(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     }
 
     if profile not in profiles:
-        execute_streaming(handler, f'echo "Available profiles: {", ".join(profiles.keys())}"')
+        execute_streaming(handler, f'echo Available profiles: {", ".join(profiles.keys())}')
         return
 
     cfg = profiles[profile]
@@ -601,7 +601,6 @@ def handle_migrate(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     safe_out = _shell_quote(output)
 
     if action == "backup":
-        timestamp = "__import__('time').strftime('%Y%m%d_%H%M%S')"
         import time as _time
         ts = _time.strftime("%Y%m%d_%H%M%S")
         if not data.get("output"):
