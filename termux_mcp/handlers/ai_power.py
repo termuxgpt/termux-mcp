@@ -51,15 +51,15 @@ def handle_smart_install(handler: "BaseHTTPRequestHandler", data: dict) -> None:
 
     checks = [
         'echo "=== Pre-Install Check ==="',
-        f'echo "Requested: {packages}"',
-        f'echo "Manager: {manager}"',
+        f'echo Requested: {_shell_quote(packages)}',
+        f'echo Manager: {_shell_quote(manager)}',
         'echo "---"',
     ]
 
     pkg_list = packages.split()
     for pkg in pkg_list:
         pkg_safe = _shell_quote(pkg)
-        checks.append(f'echo "Checking: {pkg}"')
+        checks.append(f'echo Checking: {_shell_quote(pkg)}')
         checks.append(f'pkg list-installed 2>/dev/null | grep -q "^{pkg_safe}/" && echo "  ✅ Already installed via pkg" || echo "  - Not in pkg"')
         checks.append(f'pip show {pkg_safe} 2>/dev/null | grep -q "Name:" && echo "  ✅ Already installed via pip" || echo "  - Not in pip"')
         checks.append(f'npm list -g {pkg_safe} 2>/dev/null | grep -q "{pkg_safe}" && echo "  ✅ Already installed via npm" || echo "  - Not in npm"')
@@ -78,7 +78,7 @@ def handle_smart_install(handler: "BaseHTTPRequestHandler", data: dict) -> None:
 
     if not dry_run:
         checks.append('echo "---"')
-        checks.append(f'echo "Installing: {packages}"')
+        checks.append(f'echo Installing: {_shell_quote(packages)}')
         if manager == "pip":
             checks.append(f'pip install {packages} 2>&1 | tail -20')
         elif manager == "pkg":
