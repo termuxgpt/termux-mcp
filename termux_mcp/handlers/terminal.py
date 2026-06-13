@@ -167,7 +167,7 @@ def handle_pkg_smart(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         else:
             cmd = f'echo "📦 Suggested packages for: {key}"; echo "Command: pkg install {pkgs}"; echo "---"; echo "Already installed:"; for pkg in {pkgs.split()}; do dpkg -s "$pkg" 2>/dev/null | grep Status | head -1 || echo "  $pkg - NOT installed"; done; echo "---"; echo "To install, use: install: true"'
     else:
-        cmd = f'echo "No matching packages found for: {intent}"; echo "Try broader terms like: python, video, web server, nodejs, c++"'
+        cmd = f'echo No matching packages found for: {_shell_quote(intent)}; echo Try broader terms like: python, video, web server, nodejs, c++'
 
     execute_streaming(handler, cmd)
 
@@ -182,40 +182,42 @@ def handle_explain(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         return
 
     # Build a comprehensive explanation using the shell
+    qcmd = _shell_quote(cmd)
     parts = []
     if "|" in cmd:
-        parts.append(f'echo "🔗 Pipeline: {cmd}"')
+        parts.append(f'echo Pipeline: {qcmd}')
     if ">" in cmd or ">>" in cmd:
-        parts.append(f'echo "📝 Redirects output to a file"')
+        parts.append(f'echo "Redirects output to a file"')
     if "&&" in cmd:
-        parts.append(f'echo "⛓️ Chained commands — second runs only if first succeeds"')
+        parts.append(f'echo "Chained commands — second runs only if first succeeds"')
     if "||" in cmd:
-        parts.append(f'echo "⛓️ Fallback — right side runs if left side fails"')
+        parts.append(f'echo "Fallback — right side runs if left side fails"')
     if "rm -rf" in cmd or "rm -r" in cmd:
-        parts.append(f'echo "⚠️ DANGER: rm -r will DELETE files/directories permanently"')
+        parts.append(f'echo "DANGER: rm -r will DELETE files/directories permanently"')
     if "rm " in cmd and "-rf" not in cmd:
-        parts.append(f'echo "🗑️ This will DELETE files — make sure you have backups"')
+        parts.append(f'echo "This will DELETE files — make sure you have backups"')
     if cmd.startswith("cd "):
-        parts.append(f'echo "📂 Changes directory"')
+        parts.append(f'echo "Changes directory"')
     if "sudo" in cmd:
-        parts.append(f'echo "⚠️ sudo requires root — Termux does not support sudo by default"')
+        parts.append(f'echo "sudo requires root — Termux does not support sudo by default"')
     if "apt " in cmd or "pkg " in cmd:
-        parts.append(f'echo "📦 Package manager operation"')
+        parts.append(f'echo "Package manager operation"')
     if "git " in cmd:
-        parts.append(f'echo "🔄 Git version control operation"')
+        parts.append(f'echo "Git version control operation"')
     if "pip " in cmd:
-        parts.append(f'echo "🐍 Python package manager (pip)"')
+        parts.append(f'echo "Python package manager (pip)"')
     if "npm " in cmd:
-        parts.append(f'echo "📦 Node.js package manager (npm)"')
+        parts.append(f'echo "Node.js package manager (npm)"')
 
     # Try which to resolve the command
     first_word = cmd.split()[0] if cmd.split() else ""
     if first_word:
         parts.append(f'echo "---"')
-        parts.append(f'which {_shell_quote(first_word)} 2>/dev/null && echo "✅ Command found" || echo "❌ Command NOT found — you may need to install it"')
+        qfirst = _shell_quote(first_word)
+        parts.append(f'which {qfirst} 2>/dev/null && echo "Command found" || echo "Command NOT found — you may need to install it"')
 
-    script = "\n".join(parts) if parts else f'echo "Command: {cmd}"'
-    execute_streaming(handler, f'{script}\necho "---"\necho "Original command: {cmd}"')
+    script = " && ".join(parts) if parts else f'echo Command: {qcmd}'
+    execute_streaming(handler, f'{script} && echo "---" && echo Original command: {qcmd}')
 
 
 # ── Dev Environment Setup /dev-env ───────────────────────────────────────
@@ -225,6 +227,7 @@ def handle_dev_env(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     intent = data.get("intent", "python").strip().lower()
     cwd = get_current_dir()
     project_name = data.get("name", "myproject").strip()
+    qname = _shell_quote(project_name)
 
     setups = {
         "python": (
@@ -234,8 +237,8 @@ def handle_dev_env(handler: "BaseHTTPRequestHandler", data: dict) -> None:
             f'mkdir -p {_shell_quote(cwd + "/" + project_name)} && '
             f'cd {_shell_quote(cwd + "/" + project_name)} && '
             f'echo "from flask import Flask\\napp = Flask(__name__)\\n@app.route(\'/\')\\ndef hello():\\n    return {{\'status\': \'ok\'}}\\nif __name__ == \'__main__\':\\n    app.run(host=\'0.0.0.0\', port=5000)" > app.py && '
-            f'echo "Created: {project_name}/app.py" && '
-            f'echo "Run: cd {project_name} && python app.py"'
+            f'echo Created: {qname}/app.py && '
+            f'echo Run: cd {qname} && python app.py'
         ),
         "bot": (
             "Telegram/Discord Bot",
@@ -244,14 +247,14 @@ def handle_dev_env(handler: "BaseHTTPRequestHandler", data: dict) -> None:
             f'mkdir -p {_shell_quote(cwd + "/" + project_name)} && '
             f'cd {_shell_quote(cwd + "/" + project_name)} && '
             f'echo "# Bot token (get from @BotFather or Discord Developer Portal)\\nTOKEN = \'your_token_here\'\\nprint(\'Bot ready!\')" > bot.py && '
-            f'echo "Created: {project_name}/bot.py"'
+            f'echo Created: {qname}/bot.py'
         ),
         "react": (
             "React Frontend",
             f'pkg install -y nodejs 2>&1 | tail -3 && '
             f'npm --version 2>&1 && '
             f'cd {_shell_quote(cwd)} && '
-            f'echo "Run: npx create-react-app {project_name}"'
+            f'echo "Run: npx create-react-app {qname}"'
         ),
         "node": (
             "Node.js Backend",
@@ -260,7 +263,7 @@ def handle_dev_env(handler: "BaseHTTPRequestHandler", data: dict) -> None:
             f'cd {_shell_quote(cwd + "/" + project_name)} && '
             f'npm init -y 2>&1 | tail -3 && '
             f'echo "console.log(\'Server ready\');" > index.js && '
-            f'echo "Created: {project_name}/index.js"'
+            f'echo "Created: {qname}/index.js"'
         ),
         "c": (
             "C/C++ Development",
@@ -268,23 +271,23 @@ def handle_dev_env(handler: "BaseHTTPRequestHandler", data: dict) -> None:
             f'mkdir -p {_shell_quote(cwd + "/" + project_name)} && '
             f'cd {_shell_quote(cwd + "/" + project_name)} && '
             f'echo "#include <stdio.h>\\nint main() {{\\n    printf(\\"Hello from Termux!\\\\n\\");\\n    return 0;\\n}}" > main.c && '
-            f'echo "Created: {project_name}/main.c" && '
-            f'echo "Compile: cd {project_name} && clang main.c -o main && ./main"'
+            f'echo "Created: {qname}/main.c" && '
+            f'echo "Compile: cd {qname} && clang main.c -o main && ./main"'
         ),
         "rust": (
             "Rust Development",
             f'pkg install -y rust binutils 2>&1 | tail -3 && '
             f'cd {_shell_quote(cwd)} && '
             f'cargo new {_shell_quote(project_name)} 2>&1 && '
-            f'echo "Created: {project_name}/" && '
-            f'echo "Run: cd {project_name} && cargo run"'
+            f'echo "Created: {qname}/" && '
+            f'echo "Run: cd {qname} && cargo run"'
         ),
         "data": (
             "Data Science",
             f'pkg install -y python python-pip 2>&1 | tail -3 && '
             f'pip install numpy pandas matplotlib jupyter 2>&1 | tail -5 && '
             f'mkdir -p {_shell_quote(cwd + "/" + project_name)} && '
-            f'echo "Created: {project_name}/" && '
+            f'echo "Created: {qname}/" && '
             f'echo "Start Jupyter: jupyter notebook"'
         ),
         "termux": (
