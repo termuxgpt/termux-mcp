@@ -14,7 +14,7 @@ DANGEROUS_PATTERNS = [
 
     r'dd\s+if=',                             # dd if=...
     r'mkfs\.',                               # mkfs.ext4, mkfs.ntfs etc.
-    r'format\s+',                            # format commands
+    r'(?:^|\s)mkfs\.',                       # mkfs.ext4, mkfs.ntfs etc.
 
     r':\(\)\s*\{\s*:\|\s*&\s*\};:',          # Classic fork bomb
 
@@ -39,7 +39,7 @@ WARNING_PATTERNS = [
     r'>>\s*/dev/null',                       # Overwriting logs aggressively
     r'chmod\s+-R',                           # Recursive chmod
     r'find\s+.*-delete',                     # Find + delete
-    r'> /',                                  # Redirect to root
+    r'>\s*/(?:bin|boot|etc|lib|opt|root|sbin|srv|sys|usr|var)(?:/|\s)',  # Redirect to system dirs
 ]
 
 def is_dangerous_command(cmd: str) -> Tuple[bool, str, str]:

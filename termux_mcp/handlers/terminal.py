@@ -72,7 +72,7 @@ def handle_diagnose(handler: "BaseHTTPRequestHandler", data: dict) -> None:
             'apt list --upgradable 2>&1 | head -10 || echo "Cant check updates"',
         ]
 
-    cmd = "\n".join(checks) if checks else 'echo "No diagnostic target specified"'
+    cmd = " && ".join(checks) if checks else 'echo No diagnostic target specified'
     execute_streaming(handler, cmd)
 
 
@@ -476,7 +476,7 @@ def handle_config_fix(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     if which_config in ("env", "all"):
         checks.append('echo "=== Environment ===" && env | sort | head -30')
 
-    cmd = "\n && ".join(checks) if checks else 'echo "Specify: bashrc, zshrc, termux, font, colors, storage, path, env, or all"'
+    cmd = " && ".join(checks) if checks else 'echo Specify: bashrc, zshrc, termux, font, colors, storage, path, env, or all'
     execute_streaming(handler, cmd)
 
 
