@@ -1,0 +1,15 @@
+[build-system]
+requires = ["flit_core>=3.2"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "termux-mcp"
+version = "0.2.2"
+description = "Powerful MCP server for Termux — let AI agents run shell commands on your Android device in real time"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Parixit Sutariya"}]
+requires-python = ">=3.8"
+
+[project.scripts]
+termux-mcp = "termux_mcp.__main__:run"
