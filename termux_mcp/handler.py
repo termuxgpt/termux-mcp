@@ -23,6 +23,7 @@ from .handlers.features import (
     handle_system_info, handle_process_list, handle_process_kill,
     handle_cron_add, handle_cron_list, handle_cron_remove,
     handle_diff, handle_patch, handle_health, handle_cloud_sync,
+    handle_git_pr,
 )
 from .utils import shell_quote, shell_quote_num, is_safe_path, json_response, is_install_command, encode_base64
 from .tools_schema import OPENAI_TOOLS
@@ -435,6 +436,10 @@ class MCPHandler(BaseHTTPRequestHandler):
             return
         if path == "/cloud-sync":
             handle_cloud_sync(self, data)
+            return
+
+        if path == "/git-pr":
+            handle_git_pr(self, data)
             return
 
         json_response(self,404, {"error": "Not found"})
