@@ -13,21 +13,14 @@ HOME = os.environ.get("HOME", "/data/data/com.termux/files/home")
 
 def handle_system_info(handler: "BaseHTTPRequestHandler", _data: dict) -> None:
     cmd = (
-        "python3 -c \"import os,json;"
-        "cpu=os.popen('top -bn1 2>/dev/null|grep CPU:').read();"
-        "cpu_pct=cpu.split()[1].replace('%','') if cpu else '0';"
-        "ram=os.popen('free -m 2>/dev/null|grep Mem:').read().split();"
-        "ram_total=ram[1] if len(ram)>1 else '0';"
-        "ram_used=ram[2] if len(ram)>2 else '0';"
-        "disk=os.popen('df -m /data 2>/dev/null').readlines();"
-        "disk_parts=disk[1].split() if len(disk)>1 else ['0','0','0'];"
-        "t=0;"
-        "try:\n t=int(open('/sys/class/thermal/thermal_zone0/temp').read().strip())//1000\n"
-        "except: pass;"
-        "u=0;"
-        "try:\n u=int(float(open('/proc/uptime').read().split()[0]))\n"
-        "except: pass;"
-        "print(json.dumps({'cpu_percent':cpu_pct.strip(),'ram_mb_total':ram_total,'ram_mb_used':ram_used,'disk_mb_total':disk_parts[1],'disk_mb_used':disk_parts[2],'temp_celsius':t,'uptime_seconds':u}))\""
+        'cpu=$(top -bn1 2>/dev/null | awk "/CPU:/{print \\$2}" | tr -d "%" || echo 0);'
+        'ram_total=$(free -m 2>/dev/null | awk "/Mem:/{print \\$2}" || echo 0);'
+        'ram_used=$(free -m 2>/dev/null | awk "/Mem:/{print \\$3}" || echo 0);'
+        'disk_total=$(df -m /data 2>/dev/null | awk "NR==2{print \\$2}" || echo 0);'
+        'disk_used=$(df -m /data 2>/dev/null | awk "NR==2{print \\$3}" || echo 0);'
+        'temp=0; [ -r /sys/class/thermal/thermal_zone0/temp ] && temp=$(($(cat /sys/class/thermal/thermal_zone0/temp)/1000));'
+        'uptime=0; [ -r /proc/uptime ] && uptime=$(awk "{print int(\\$1)}" /proc/uptime);'
+        'echo "{\\"cpu_percent\\":$cpu,\\"ram_mb_total\\":$ram_total,\\"ram_mb_used\\":$ram_used,\\"disk_mb_total\\":$disk_total,\\"disk_mb_used\\":$disk_used,\\"temp_celsius\\":$temp,\\"uptime_seconds\\":$uptime}"'
     )
     execute_streaming(handler, cmd)
 
