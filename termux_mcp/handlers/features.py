@@ -16,8 +16,8 @@ def handle_system_info(handler: "BaseHTTPRequestHandler", _data: dict) -> None:
         'cpu=$(top -bn1 2>/dev/null | grep -oP "[0-9.]+%" | head -1 | tr -d "%" || echo 0);'
         'ram_total=$(free -m 2>/dev/null | awk "/Mem:/{print \\$2}" || echo 0);'
         'ram_used=$(free -m 2>/dev/null | awk "/Mem:/{print \\$3}" || echo 0);'
-        'disk_total=$(df -m /data 2>/dev/null | tail -1 | awk "{print \\$2}" || echo 0);'
-        'disk_used=$(df -m /data 2>/dev/null | tail -1 | awk "{print \\$3}" || echo 0);'
+        'disk_total=$(df -m /data 2>/dev/null | awk "END{print \\$2}" || echo 0);'
+        'disk_used=$(df -m /data 2>/dev/null | awk "END{print \\$3}" || echo 0);'
         'temp=0; [ -r /sys/class/thermal/thermal_zone0/temp ] && temp=$(($(cat /sys/class/thermal/thermal_zone0/temp)/1000));'
         'uptime=0; [ -r /proc/uptime ] && uptime=$(awk "{print int(\\$1)}" /proc/uptime);'
         'echo "{\\"cpu_percent\\":\\"$cpu\\",\\"ram_mb_total\\":$ram_total,\\"ram_mb_used\\":$ram_used,\\"disk_mb_total\\":$disk_total,\\"disk_mb_used\\":$disk_used,\\"temp_celsius\\":$temp,\\"uptime_seconds\\":$uptime}"'
@@ -30,7 +30,7 @@ def handle_process_list(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     cmd = (
         f'echo "PID USER CPU% MEM% COMMAND";'
         f'ps aux --sort=-%cpu 2>/dev/null | head -n {limit} | '
-        f'while read u p c m r; do printf "%-6s %-8s %-5s %-5s %s\\n" "$p" "$u" "$c" "$m" "${r:0:50}"; done'
+        f'while read u p c m r; do printf "%-6s %-8s %-5s %-5s %s\\n" "$p" "$u" "$c" "$m" "$r"; done'
     )
     execute_streaming(handler, cmd)
 
