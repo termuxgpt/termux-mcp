@@ -25,6 +25,8 @@ from .handlers.features import (
     handle_diff, handle_patch, handle_health, handle_cloud_sync,
 )
 from .utils import shell_quote, shell_quote_num, is_safe_path, json_response, is_install_command, encode_base64
+from .tools_schema import OPENAI_TOOLS
+from . import websocket as ws
 from .security import get_risk_assessment
 from .shell import (
     cancel_active,
@@ -105,6 +107,18 @@ class MCPHandler(BaseHTTPRequestHandler):
                 "pid": os.getpid(),
                 "active_command_pid": get_active_pid(),
             })
+            return
+
+        if path == "/tools":
+            json_response(self,200, {"tools": OPENAI_TOOLS})
+            return
+
+        if path == "/ws":
+            raw_headers = self.headers.as_string(
+                self.headers.keys(), ": ", "\r\n"
+            ) if hasattr(self.headers, 'as_string') else str(self.headers)
+            sock = self.request
+            ws.ws_handler(sock, raw_headers)
             return
 
         json_response(self,404, {"error": "Not found"})
