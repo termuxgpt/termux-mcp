@@ -264,3 +264,142 @@ def handle_git_pr(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     else:
         cmd = 'echo "Actions: list view diff merge approve status create"'
     execute_streaming(handler, cmd)
+
+
+RECIPES_FILE = os.path.join(HOME, ".termux_recipes.json")
+
+DEFAULT_RECIPES = {
+    "deploy-python-api": {
+        "name": "Deploy Python API",
+        "desc": "Install Python, create venv, setup Flask, start server",
+        "steps": [
+            "pkg install python python-pip -y",
+            "cd ~ && mkdir -p api-project && cd api-project",
+            "python3 -m venv .venv && source .venv/bin/activate",
+            "pip install flask gunicorn",
+            "echo 'from flask import Flask; app = Flask(__name__); @app.route(\"/\") def hello(): return {\"status\":\"ok\"}; app.run(host=\"0.0.0.0\",port=8080)' > app.py",
+            "echo 'Ready! Run: cd ~/api-project && source .venv/bin/activate && python app.py'"
+        ]
+    },
+    "setup-dev-env": {
+        "name": "Setup Dev Environment",
+        "desc": "Install git, python, node, vim, tmux, create project structure",
+        "steps": [
+            "pkg install git python nodejs vim tmux openssh -y",
+            "mkdir -p ~/projects ~/scripts ~/backups",
+            "git config --global init.defaultBranch main",
+            "echo 'alias g=git' >> ~/.bashrc",
+            "echo 'alias py=python3' >> ~/.bashrc",
+            "echo 'Dev environment ready. Projects folder: ~/projects'"
+        ]
+    },
+    "backup-everything": {
+        "name": "Backup Everything",
+        "desc": "Backup home, packages list, and configs with timestamp",
+        "steps": [
+            "cd ~ && mkdir -p ~/storage/shared/backups",
+            "tar -czf ~/storage/shared/backups/home_$(date +%Y%m%d_%H%M%S).tar.gz . --exclude='.cache' --exclude='__pycache__' --exclude='node_modules'",
+            "pkg list-installed > ~/storage/shared/backups/packages_$(date +%Y%m%d_%H%M%S).txt",
+            "echo 'Backup complete. Files in ~/storage/shared/backups/'"
+        ]
+    },
+    "system-audit": {
+        "name": "System Audit",
+        "desc": "Full system check: packages, storage, network, security",
+        "steps": [
+            "echo '=== Packages ===' && pkg list-installed | wc -l && echo 'packages installed'",
+            "echo '=== Storage ===' && df -h /data",
+            "echo '=== Memory ===' && free -h",
+            "echo '=== Network ===' && ping -c 2 google.com",
+            "echo '=== Listening Ports ===' && netstat -tlnp 2>/dev/null || ss -tlnp",
+            "echo '=== Large Files ===' && find ~ -type f -size +10M 2>/dev/null | head -10",
+            "echo 'Audit complete.'"
+        ]
+    },
+}
+
+
+def _load_recipes() -> dict:
+    import json
+    try:
+        with open(RECIPES_FILE) as f:
+            return json.load(f)
+    except Exception:
+        _save_recipes(DEFAULT_RECIPES)
+        return dict(DEFAULT_RECIPES)
+
+
+def _save_recipes(data: dict) -> None:
+    import json
+    os.makedirs(os.path.dirname(RECIPES_FILE) or ".", exist_ok=True)
+    with open(RECIPES_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def handle_recipe_list(handler: "BaseHTTPRequestHandler", _data: dict) -> None:
+    recipes = _load_recipes()
+    lines = ["Available Recipes:", "---"]
+    for key, r in recipes.items():
+        lines.append(f"  {key} — {r['name']}: {r['desc']}")
+    handler.send_response(200)
+    handler.send_header("Content-Type", "text/plain")
+    handler.send_header("Transfer-Encoding", "chunked")
+    handler.end_headers()
+    execute_streaming(handler, "echo '" + "; ".join(lines) + "'")
+
+
+def handle_recipe_run(handler: "BaseHTTPRequestHandler", data: dict) -> None:
+    recipe_id = data.get("recipe", "").strip()
+    recipes = _load_recipes()
+    recipe = recipes.get(recipe_id) or recipes.get(list(recipes.keys())[0]) if recipes else None
+    if not recipe:
+        json_response(handler, 404, {"error": f"Recipe '{recipe_id}' not found"})
+        return
+    cmd = " && ".join([f'echo "> {s}" && {s}' for s in recipe["steps"]])
+    execute_streaming(handler, cmd)
+
+
+def handle_recipe_save(handler: "BaseHTTPRequestHandler", data: dict) -> None:
+    recipe_id = data.get("recipe", "").strip()
+    name = data.get("name", "").strip()
+    desc = data.get("desc", "").strip()
+    steps = data.get("steps", [])
+    if not recipe_id or not name or not steps:
+        json_response(handler, 400, {"error": "recipe, name, and steps required"})
+        return
+    recipes = _load_recipes()
+    recipes[recipe_id] = {"name": name, "desc": desc, "steps": steps}
+    _save_recipes(recipes)
+    json_response(handler, 200, {"saved": recipe_id, "total": len(recipes)})
+
+
+CONTEXT_FILE = os.path.join(HOME, ".termux_context.json")
+
+
+def handle_context(handler: "BaseHTTPRequestHandler", _data: dict) -> None:
+    import json
+    try:
+        with open(CONTEXT_FILE) as f:
+            data = json.load(f)
+    except Exception:
+        data = {"note": "No context saved yet. Run context-save first."}
+    json_response(handler, 200, data)
+
+
+def handle_context_save(handler: "BaseHTTPRequestHandler", _data: dict) -> None:
+    import json, time
+    context = {
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "hostname": os.popen("hostname 2>/dev/null || echo termux").read().strip(),
+        "packages_count": os.popen("pkg list-installed 2>/dev/null | wc -l").read().strip(),
+        "python_version": os.popen("python3 --version 2>/dev/null || echo none").read().strip(),
+        "disk_used": os.popen("df -h /data 2>/dev/null | awk 'NR==2{print $3,$4,$5}' || echo unknown").read().strip(),
+        "ram": os.popen("free -h 2>/dev/null | awk '/Mem:/{print $3,$2}' || echo unknown").read().strip(),
+        "current_dir": get_current_dir(),
+    }
+    try:
+        with open(CONTEXT_FILE, "w") as f:
+            json.dump(context, f, indent=2)
+        json_response(handler, 200, {"saved": context})
+    except Exception as e:
+        json_response(handler, 500, {"error": str(e)})
