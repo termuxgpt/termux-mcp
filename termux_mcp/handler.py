@@ -19,6 +19,12 @@ from .handlers.terminal import (
     handle_storage_audit, handle_config_fix, handle_git_smart, handle_regex,
     handle_db_design, handle_backup, handle_restore,
 )
+from .handlers.features import (
+    handle_system_info, handle_process_list, handle_process_kill,
+    handle_cron_add, handle_cron_list, handle_cron_remove,
+    handle_diff, handle_patch, handle_health, handle_cloud_sync,
+)
+from .utils import shell_quote, shell_quote_num, is_safe_path, json_response, is_install_command, encode_base64
 from .security import get_risk_assessment
 from .shell import (
     cancel_active,
@@ -35,11 +41,6 @@ MAX_BODY_SIZE = 5 * 1024 * 1024  # 5 MB
 
 def _constant_time_compare(a: str, b: str) -> bool:
     return hmac.compare_digest(a.encode(), b.encode())
-
-
-def _shell_quote(s: str) -> str:
-    """Wrap in single quotes, properly escaping embedded single quotes."""
-    return "'" + s.replace("'", "'\\''") + "'"
 
 
 class MCPHandler(BaseHTTPRequestHandler):
@@ -84,14 +85,6 @@ class MCPHandler(BaseHTTPRequestHandler):
             self._log(f"JSON read error: {e}")
             return {}
 
-    def _json_response(self, status: int, payload: dict) -> None:
-        body = json.dumps(payload).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
     # ── GET ─────────────────────────────────────────────────────────────────
 
     def do_GET(self) -> None:
@@ -99,14 +92,14 @@ class MCPHandler(BaseHTTPRequestHandler):
         self._log(f"GET {path}")
 
         if path == "/ping":
-            self._json_response(200, {
+            json_response(self,200, {
                 "status": "ok",
                 "cwd": get_current_dir(),
             })
             return
 
         if path == "/env":
-            self._json_response(200, {
+            json_response(self,200, {
                 "cwd": get_current_dir(),
                 "home": HOME,
                 "pid": os.getpid(),
@@ -114,7 +107,7 @@ class MCPHandler(BaseHTTPRequestHandler):
             })
             return
 
-        self._json_response(404, {"error": "Not found"})
+        json_response(self,404, {"error": "Not found"})
 
     # ── POST ────────────────────────────────────────────────────────────────
 
@@ -129,7 +122,7 @@ class MCPHandler(BaseHTTPRequestHandler):
 
         data = self._read_json()
         if "_error" in data:
-            self._json_response(413, {"error": data["_error"]})
+            json_response(self,413, {"error": data["_error"]})
             return
 
         if path == "/run":
@@ -146,7 +139,7 @@ class MCPHandler(BaseHTTPRequestHandler):
 
         if path == "/cancel":
             ok = cancel_active()
-            self._json_response(200, {"cancelled": ok})
+            json_response(self,200, {"cancelled": ok})
             return
 
         if path == "/write":
@@ -398,20 +391,52 @@ class MCPHandler(BaseHTTPRequestHandler):
             handle_tutorial(self, data)
             return
 
-        self._json_response(404, {"error": "Not found"})
+        # ── Monopoly Features ──────────────────────────────────────────
+        if path == "/system-info":
+            handle_system_info(self, data)
+            return
+        if path == "/process-list":
+            handle_process_list(self, data)
+            return
+        if path == "/process-kill":
+            handle_process_kill(self, data)
+            return
+        if path == "/cron-add":
+            handle_cron_add(self, data)
+            return
+        if path == "/cron-list":
+            handle_cron_list(self, data)
+            return
+        if path == "/cron-remove":
+            handle_cron_remove(self, data)
+            return
+        if path == "/diff":
+            handle_diff(self, data)
+            return
+        if path == "/patch":
+            handle_patch(self, data)
+            return
+        if path == "/health":
+            handle_health(self, data)
+            return
+        if path == "/cloud-sync":
+            handle_cloud_sync(self, data)
+            return
+
+        json_response(self,404, {"error": "Not found"})
 
     # ── Handlers ────────────────────────────────────────────────────────────
 
     def _handle_run(self, data: dict) -> None:
         cmd = data.get("cmd", "").strip()
         if not cmd:
-            self._json_response(400, {"error": "Missing 'cmd'"})
+            json_response(self,400, {"error": "Missing 'cmd'"})
             return
 
         # Security check
         risk = get_risk_assessment(cmd)
         if risk["blocked"]:
-            self._json_response(403, {
+            json_response(self,403, {
                 "error": risk["message"],
                 "risk_level": risk["risk_level"],
                 "blocked": True,
@@ -421,7 +446,7 @@ class MCPHandler(BaseHTTPRequestHandler):
         if risk["requires_confirmation"]:
             # Return the risk assessment — client must re-send with confirmed: true
             if not data.get("confirmed"):
-                self._json_response(200, {
+                json_response(self,200, {
                     "status": "confirmation_required",
                     "command": cmd,
                     "risk_level": risk["risk_level"],
@@ -436,59 +461,59 @@ class MCPHandler(BaseHTTPRequestHandler):
     def _handle_ls(self, data: dict) -> None:
         path = (data.get("path") or ".").strip()
         detailed = data.get("detailed", False)
-        if not self._is_safe_path(path):
-            self._json_response(403, {"error": "Path not allowed"})
+        if not is_safe_path(path):
+            json_response(self,403, {"error": "Path not allowed"})
             return
         flags = "-la" if detailed else "-1"
-        execute_streaming(self, f'ls {flags} {_shell_quote(path)} 2>/dev/null || echo Cannot access: {_shell_quote(path)}')
+        execute_streaming(self, f'ls {flags} {shell_quote(path)} 2>/dev/null || echo Cannot access: {shell_quote(path)}')
 
     def _handle_read(self, data: dict) -> None:
         path = (data.get("path") or "").strip()
         if not path:
-            self._json_response(400, {"error": "Missing 'path'"})
+            json_response(self,400, {"error": "Missing 'path'"})
             return
-        if not self._is_safe_path(path):
-            self._json_response(403, {"error": "Path not allowed"})
+        if not is_safe_path(path):
+            json_response(self,403, {"error": "Path not allowed"})
             return
-        execute_streaming(self, f'head -n 500 {_shell_quote(path)} 2>/dev/null || echo Cannot read: {_shell_quote(path)}')
+        execute_streaming(self, f'head -n 500 {shell_quote(path)} 2>/dev/null || echo Cannot read: {shell_quote(path)}')
 
     def _handle_write(self, data: dict) -> None:
         path = (data.get("path") or "").strip()
         content = (data.get("content") or "")
         if not path:
-            self._json_response(400, {"error": "Missing 'path'"})
+            json_response(self,400, {"error": "Missing 'path'"})
             return
-        if not self._is_safe_path(path):
-            self._json_response(403, {"error": "Path not allowed"})
+        if not is_safe_path(path):
+            json_response(self,403, {"error": "Path not allowed"})
             return
         # Write via base64 to avoid shell escaping issues entirely
         encoded = base64.b64encode(content.encode()).decode()
         execute_streaming(
             self,
-            f'mkdir -p "$(dirname {_shell_quote(path)})" 2>/dev/null; '
-            f'echo {_shell_quote(encoded)} | base64 -d > {_shell_quote(path)} && '
-            f'echo Written: {_shell_quote(path)}'
+            f'mkdir -p "$(dirname {shell_quote(path)})" 2>/dev/null; '
+            f'echo {shell_quote(encoded)} | base64 -d > {shell_quote(path)} && '
+            f'echo Written: {shell_quote(path)}'
         )
 
     def _handle_mkdir(self, data: dict) -> None:
         path = (data.get("path") or "").strip()
         if not path:
-            self._json_response(400, {"error": "Missing 'path'"})
+            json_response(self,400, {"error": "Missing 'path'"})
             return
-        if not self._is_safe_path(path):
-            self._json_response(403, {"error": "Path not allowed"})
+        if not is_safe_path(path):
+            json_response(self,403, {"error": "Path not allowed"})
             return
-        execute_streaming(self, f'mkdir -p {_shell_quote(path)} && echo Created: {_shell_quote(path)}')
+        execute_streaming(self, f'mkdir -p {shell_quote(path)} && echo Created: {shell_quote(path)}')
 
     def _handle_delete(self, data: dict) -> None:
         path = (data.get("path") or "").strip()
         recursive = data.get("recursive", False)
         if not path:
-            self._json_response(400, {"error": "Missing 'path'"})
+            json_response(self,400, {"error": "Missing 'path'"})
             return
         # Always require confirmation for delete
         if not data.get("confirmed"):
-            self._json_response(200, {
+            json_response(self,200, {
                 "status": "confirmation_required",
                 "command": f"rm {'-rf' if recursive else ''} {path}",
                 "risk_level": "warning",
@@ -496,33 +521,33 @@ class MCPHandler(BaseHTTPRequestHandler):
                 "requires_confirmation": True,
             })
             return
-        if not self._is_safe_path(path):
-            self._json_response(403, {"error": "Path not allowed"})
+        if not is_safe_path(path):
+            json_response(self,403, {"error": "Path not allowed"})
             return
         flags = "-rf" if recursive else ""
-        execute_streaming(self, f'rm {flags} {_shell_quote(path)} 2>/dev/null && echo Deleted: {_shell_quote(path)} || echo Failed to delete: {_shell_quote(path)}')
+        execute_streaming(self, f'rm {flags} {shell_quote(path)} 2>/dev/null && echo Deleted: {shell_quote(path)} || echo Failed to delete: {shell_quote(path)}')
 
     def _handle_search(self, data: dict) -> None:
         path = (data.get("path") or ".").strip()
-        pattern = (data.get("pattern") or "*").strip()
-        if not self._is_safe_path(path):
-            self._json_response(403, {"error": "Path not allowed"})
+        pattern = (data.get("pattern") or data.get("query") or data.get("name") or "*").strip()
+        if not is_safe_path(path):
+            json_response(self,403, {"error": "Path not allowed"})
             return
-        execute_streaming(self, f'find {_shell_quote(path)} -name {_shell_quote(pattern)} -type f 2>/dev/null | head -n 30')
+        execute_streaming(self, f'find {shell_quote(path)} -name {shell_quote(pattern)} -type f 2>/dev/null | head -n 30')
 
     # ── Vision & Communication ────────────────────────────────────────────
 
     def _handle_screenshot(self, data: dict) -> None:
         output = data.get("output", "").strip()
         if output:
-            execute_streaming(self, f"termux-screenshot -o {_shell_quote(output)} 2>/dev/null || echo 'Screenshot failed'")
+            execute_streaming(self, f"termux-screenshot -o {shell_quote(output)} 2>/dev/null || echo 'Screenshot failed'")
         else:
             execute_streaming(self, "termux-screenshot 2>/dev/null || echo 'Screenshot failed'")
 
     def _handle_camera_photo(self, data: dict) -> None:
-        camera_id = str(data.get("camera_id", 0))
+        camera_id = shell_quote_num(data.get("camera_id", 0))
         output = data.get("output", "").strip() or "/sdcard/DCIM/termux_photo.jpg"
-        execute_streaming(self, f"termux-camera-photo -c {_shell_quote(camera_id)} {_shell_quote(output)} 2>/dev/null || echo Camera photo failed")
+        execute_streaming(self, f"termux-camera-photo -c {shell_quote(camera_id)} {shell_quote(output)} 2>/dev/null || echo Camera photo failed")
 
     def _handle_camera_info(self, data: dict) -> None:
         execute_streaming(self, "termux-camera-info 2>/dev/null || echo '{}'")
@@ -533,15 +558,15 @@ class MCPHandler(BaseHTTPRequestHandler):
     def _handle_clipboard_set(self, data: dict) -> None:
         text = data.get("text", "").strip()
         if not text:
-            self._json_response(400, {"error": "Missing 'text'"})
+            json_response(self,400, {"error": "Missing 'text'"})
             return
-        execute_streaming(self, f"echo {_shell_quote(text)} | termux-clipboard-set && echo 'Clipboard set' || echo 'Failed'")
+        execute_streaming(self, f"echo {shell_quote(text)} | termux-clipboard-set && echo 'Clipboard set' || echo 'Failed'")
 
     def _handle_notify(self, data: dict) -> None:
         title = data.get("title", "TermuxGPT").strip()
         content = data.get("content", "").strip()
         if not content:
-            self._json_response(400, {"error": "Missing 'content'"})
+            json_response(self,400, {"error": "Missing 'content'"})
             return
         priority = data.get("priority", "default").strip()
         nid = data.get("id", "").strip()
@@ -550,12 +575,12 @@ class MCPHandler(BaseHTTPRequestHandler):
             flags += f" --id {nid}"
         if data.get("ongoing"):
             flags += " --ongoing"
-        execute_streaming(self, f"termux-notification {flags} --priority {priority} --title {_shell_quote(title)} --content {_shell_quote(content)} 2>/dev/null && echo 'Notification sent' || echo 'Notification failed'")
+        execute_streaming(self, f"termux-notification {flags} --priority {priority} --title {shell_quote(title)} --content {shell_quote(content)} 2>/dev/null && echo 'Notification sent' || echo 'Notification failed'")
 
     def _handle_notify_remove(self, data: dict) -> None:
         nid = str(data.get("id", "")).strip()
         if not nid:
-            self._json_response(400, {"error": "Missing 'id'"})
+            json_response(self,400, {"error": "Missing 'id'"})
             return
         execute_streaming(self, f"termux-notification-remove {nid} 2>/dev/null && echo 'Removed' || echo 'Failed'")
 
@@ -563,40 +588,40 @@ class MCPHandler(BaseHTTPRequestHandler):
         text = data.get("text", "").strip()
         file_path = data.get("file", "").strip()
         if file_path:
-            if not self._is_safe_path(file_path):
-                self._json_response(403, {"error": "Path not allowed"})
+            if not is_safe_path(file_path):
+                json_response(self,403, {"error": "Path not allowed"})
                 return
-            execute_streaming(self, f"termux-share -a send {_shell_quote(file_path)} 2>/dev/null || echo 'Share failed'")
+            execute_streaming(self, f"termux-share -a send {shell_quote(file_path)} 2>/dev/null || echo 'Share failed'")
         elif text:
             execute_streaming(self,
-                f"echo {_shell_quote(text)} > /data/data/com.termux/files/usr/tmp/termux_share.txt 2>/dev/null && "
+                f"echo {shell_quote(text)} > /data/data/com.termux/files/usr/tmp/termux_share.txt 2>/dev/null && "
                 f"termux-share -a send /data/data/com.termux/files/usr/tmp/termux_share.txt 2>/dev/null && "
                 f"echo 'Share opened' || echo 'Share failed'")
         else:
-            self._json_response(400, {"error": "Missing 'text' or 'file'"})
+            json_response(self,400, {"error": "Missing 'text' or 'file'"})
 
     def _handle_open_url(self, data: dict) -> None:
         url = data.get("url", "").strip()
         if not url:
-            self._json_response(400, {"error": "Missing 'url'"})
+            json_response(self,400, {"error": "Missing 'url'"})
             return
-        execute_streaming(self, f"termux-open-url {_shell_quote(url)} 2>/dev/null && echo Opened: {_shell_quote(url)} || echo Failed to open")
+        execute_streaming(self, f"termux-open-url {shell_quote(url)} 2>/dev/null && echo Opened: {shell_quote(url)} || echo Failed to open")
 
     # ── Device Control & Info ──────────────────────────────────────────────
 
     def _handle_download(self, data: dict) -> None:
         url = data.get("url", "").strip()
         if not url:
-            self._json_response(400, {"error": "Missing 'url'"})
+            json_response(self,400, {"error": "Missing 'url'"})
             return
         desc = data.get("description", "").strip()
         title = data.get("title", "").strip()
         flags = ""
         if desc:
-            flags += f" -d {_shell_quote(desc)}"
+            flags += f" -d {shell_quote(desc)}"
         if title:
-            flags += f" -t {_shell_quote(title)}"
-        execute_streaming(self, f"termux-download{flags} {_shell_quote(url)} 2>/dev/null && echo 'Download started' || echo 'Download failed'")
+            flags += f" -t {shell_quote(title)}"
+        execute_streaming(self, f"termux-download{flags} {shell_quote(url)} 2>/dev/null && echo 'Download started' || echo 'Download failed'")
 
     def _handle_battery(self, data: dict) -> None:
         execute_streaming(self, "termux-battery-status 2>/dev/null || echo '{}'")
@@ -609,7 +634,7 @@ class MCPHandler(BaseHTTPRequestHandler):
 
     def _handle_location(self, data: dict) -> None:
         provider = data.get("provider", "gps").strip()
-        execute_streaming(self, f"termux-location -p {_shell_quote(provider)} -r last 2>/dev/null || echo '{{}}'")
+        execute_streaming(self, f"termux-location -p {shell_quote(provider)} -r last 2>/dev/null || echo '{{}}'")
 
     def _handle_contacts(self, data: dict) -> None:
         execute_streaming(self, "termux-contact-list 2>/dev/null || echo '[]'")
@@ -618,19 +643,19 @@ class MCPHandler(BaseHTTPRequestHandler):
         number = data.get("number", "").strip()
         text = data.get("text", "").strip()
         if not number or not text:
-            self._json_response(400, {"error": "Missing 'number' or 'text'"})
+            json_response(self,400, {"error": "Missing 'number' or 'text'"})
             return
-        execute_streaming(self, f"termux-sms-send -n {_shell_quote(number)} {_shell_quote(text)} 2>/dev/null && echo 'SMS sent' || echo 'SMS failed'")
+        execute_streaming(self, f"termux-sms-send -n {shell_quote(number)} {shell_quote(text)} 2>/dev/null && echo 'SMS sent' || echo 'SMS failed'")
 
     def _handle_sms_inbox(self, data: dict) -> None:
-        limit = str(data.get("limit", 10))
+        limit = shell_quote_num(data.get("limit", 10))
         execute_streaming(self, f"termux-sms-inbox -n {limit} 2>/dev/null || echo '[]'")
 
     def _handle_list_apps(self, data: dict) -> None:
         execute_streaming(self, "termux-app-list 2>/dev/null || echo '{}'")
 
     def _handle_vibrate(self, data: dict) -> None:
-        duration = str(data.get("duration_ms", 500))
+        duration = shell_quote_num(data.get("duration_ms", 500))
         execute_streaming(self, f"termux-vibrate -d {duration} 2>/dev/null && echo 'Vibrated {duration}ms' || echo 'Vibrate failed'")
 
     # ── Automation & Media ─────────────────────────────────────────────────
@@ -638,16 +663,16 @@ class MCPHandler(BaseHTTPRequestHandler):
     def _handle_tts_speak(self, data: dict) -> None:
         text = data.get("text", "").strip()
         if not text:
-            self._json_response(400, {"error": "Missing 'text'"})
+            json_response(self,400, {"error": "Missing 'text'"})
             return
-        rate = str(data.get("rate", 1.0))
-        pitch = str(data.get("pitch", 1.0))
-        execute_streaming(self, f"termux-tts-speak --rate {rate} --pitch {pitch} {_shell_quote(text)} 2>/dev/null && echo 'Spoken' || echo 'TTS failed'")
+        rate = shell_quote_num(data.get("rate", 1.0))
+        pitch = shell_quote_num(data.get("pitch", 1.0))
+        execute_streaming(self, f"termux-tts-speak --rate {rate} --pitch {pitch} {shell_quote(text)} 2>/dev/null && echo 'Spoken' || echo 'TTS failed'")
 
     def _handle_torch(self, data: dict) -> None:
         state = data.get("state", "on").strip().lower()
         if state not in ("on", "off"):
-            self._json_response(400, {"error": "State must be 'on' or 'off'"})
+            json_response(self,400, {"error": "State must be 'on' or 'off'"})
             return
         execute_streaming(self, f"termux-torch {state} 2>/dev/null && echo 'Torch {state}' || echo 'Torch failed'")
 
@@ -655,12 +680,12 @@ class MCPHandler(BaseHTTPRequestHandler):
         file_path = data.get("file", "").strip()
         lockscreen = data.get("lockscreen", False)
         if file_path:
-            if not self._is_safe_path(file_path):
-                self._json_response(403, {"error": "Path not allowed"})
+            if not is_safe_path(file_path):
+                json_response(self,403, {"error": "Path not allowed"})
                 return
         flags = "-l" if lockscreen else ""
         if file_path:
-            execute_streaming(self, f"termux-wallpaper {flags} -f {_shell_quote(file_path)} 2>/dev/null && echo 'Wallpaper set' || echo 'Wallpaper failed'")
+            execute_streaming(self, f"termux-wallpaper {flags} -f {shell_quote(file_path)} 2>/dev/null && echo 'Wallpaper set' || echo 'Wallpaper failed'")
         else:
             execute_streaming(self, f"termux-wallpaper {flags} 2>/dev/null && echo 'Wallpaper set' || echo 'Wallpaper failed'")
 
@@ -669,25 +694,25 @@ class MCPHandler(BaseHTTPRequestHandler):
     def _handle_toast(self, data: dict) -> None:
         text = data.get("text", "").strip()
         if not text:
-            self._json_response(400, {"error": "Missing 'text'"})
+            json_response(self,400, {"error": "Missing 'text'"})
             return
         short = str(data.get("short_duration", True)).lower() == "true"
         flags = " -s" if short else " -l"
-        execute_streaming(self, f"termux-toast{flags} {_shell_quote(text)} 2>/dev/null && echo 'Toast shown' || echo 'Toast failed'")
+        execute_streaming(self, f"termux-toast{flags} {shell_quote(text)} 2>/dev/null && echo 'Toast shown' || echo 'Toast failed'")
 
     def _handle_dialog(self, data: dict) -> None:
         title = data.get("title", "TermuxGPT").strip()
         msg = data.get("message", "").strip()
         if not msg:
-            self._json_response(400, {"error": "Missing 'message'"})
+            json_response(self,400, {"error": "Missing 'message'"})
             return
         execute_streaming(
             self,
-            f"termux-dialog confirm -t {_shell_quote(title)} -i {_shell_quote(msg)} 2>/dev/null && echo 'Dialog shown' || echo 'Dialog failed'"
+            f"termux-dialog confirm -t {shell_quote(title)} -i {shell_quote(msg)} 2>/dev/null && echo 'Dialog shown' || echo 'Dialog failed'"
         )
 
     def _handle_brightness(self, data: dict) -> None:
-        level = str(data.get("level", ""))
+        level = shell_quote(data.get("level", "") or "")
         if not level:
             execute_streaming(self, "termux-brightness 2>/dev/null || echo '{}'")
         else:
@@ -695,11 +720,11 @@ class MCPHandler(BaseHTTPRequestHandler):
 
     def _handle_volume(self, data: dict) -> None:
         stream = data.get("stream", "music").strip()
-        level = str(data.get("level", ""))
+        level = shell_quote(data.get("level", "") or "")
         if level:
-            execute_streaming(self, f"termux-volume {_shell_quote(stream)} {level} 2>/dev/null && echo 'Volume set' || echo 'Volume failed'")
+            execute_streaming(self, f"termux-volume {shell_quote(stream)} {level} 2>/dev/null && echo 'Volume set' || echo 'Volume failed'")
         else:
-            execute_streaming(self, f"termux-volume {_shell_quote(stream)} 2>/dev/null || echo 'Volume failed'")
+            execute_streaming(self, f"termux-volume {shell_quote(stream)} 2>/dev/null || echo 'Volume failed'")
 
     def _handle_screen_record(self, data: dict) -> None:
         output = data.get("output", "/sdcard/DCIM/screen_record.mp4").strip()
@@ -707,17 +732,17 @@ class MCPHandler(BaseHTTPRequestHandler):
         if action == "stop":
             execute_streaming(self, "termux-screen-record -q 2>/dev/null && echo 'Recording stopped' || echo 'Stop failed'")
         else:
-            execute_streaming(self, f"termux-screen-record -o {_shell_quote(output)} 2>/dev/null && echo 'Recording started' || echo 'Recording failed'")
+            execute_streaming(self, f"termux-screen-record -o {shell_quote(output)} 2>/dev/null && echo 'Recording started' || echo 'Recording failed'")
 
     def _handle_qrcode(self, data: dict) -> None:
         text = data.get("text", "").strip()
         if not text:
-            self._json_response(400, {"error": "Missing 'text'"})
+            json_response(self,400, {"error": "Missing 'text'"})
             return
         output = data.get("output", "/sdcard/DCIM/qrcode.png").strip()
         execute_streaming(
             self,
-            f"qrencode -o {_shell_quote(output)} {_shell_quote(text)} 2>/dev/null && echo 'QR code saved to {output}' || echo 'Install qrencode: pkg install qrencode'"
+            f"qrencode -o {shell_quote(output)} {shell_quote(text)} 2>/dev/null && echo 'QR code saved to {output}' || echo 'Install qrencode: pkg install qrencode'"
         )
 
     def _handle_fingerprint(self, data: dict) -> None:
@@ -726,17 +751,18 @@ class MCPHandler(BaseHTTPRequestHandler):
     def _handle_call(self, data: dict) -> None:
         number = data.get("number", "").strip()
         if not number:
-            self._json_response(400, {"error": "Missing 'number'"})
+            json_response(self,400, {"error": "Missing 'number'"})
             return
-        execute_streaming(self, f"termux-telephony-call {_shell_quote(number)} 2>/dev/null && echo 'Calling {number}' || echo 'Call failed'")
+        quoted = shell_quote(number)
+        execute_streaming(self, f"termux-telephony-call {quoted} 2>/dev/null && echo Calling {quoted} || echo Call failed")
 
     def _handle_scan_barcode(self, data: dict) -> None:
-        camera_id = str(data.get("camera_id", 0))
+        camera_id = shell_quote_num(data.get("camera_id", 0))
         output = data.get("output", "/sdcard/DCIM/barcode_capture.jpg").strip()
         execute_streaming(
             self,
-            f"termux-camera-photo -c {camera_id} {_shell_quote(output)} 2>/dev/null && "
-            f"zbarimg -q {_shell_quote(output)} 2>/dev/null || echo 'Install zbar: pkg install zbar'"
+            f"termux-camera-photo -c {camera_id} {shell_quote(output)} 2>/dev/null && "
+            f"zbarimg -q {shell_quote(output)} 2>/dev/null || echo 'Install zbar: pkg install zbar'"
         )
 
     # ── Missing termux-api Handlers ──────────────────────────────────────
@@ -745,18 +771,18 @@ class MCPHandler(BaseHTTPRequestHandler):
         sensor_name = data.get("sensor", "").strip()
         limit = str(data.get("limit", 1))
         if sensor_name:
-            execute_streaming(self, f"termux-sensor -s {_shell_quote(sensor_name)} -n {limit} 2>/dev/null || echo 'Sensor failed'")
+            execute_streaming(self, f"termux-sensor -s {shell_quote(sensor_name)} -n {limit} 2>/dev/null || echo 'Sensor failed'")
         else:
             execute_streaming(self, "termux-sensor -l 2>/dev/null || echo 'Sensor list failed'")
 
     def _handle_microphone_record(self, data: dict) -> None:
         output = data.get("output", "/sdcard/DCIM/termux_recording.mp3").strip()
-        limit = str(data.get("limit_seconds", 10))
+        limit = shell_quote_num(data.get("limit_seconds", 10))
         action = data.get("action", "start").strip()
         if action == "stop":
             execute_streaming(self, "termux-microphone-record -q 2>/dev/null && echo 'Recording stopped' || echo 'Stop failed'")
         else:
-            execute_streaming(self, f"termux-microphone-record -l {limit} -f {_shell_quote(output)} 2>/dev/null && echo 'Recording started' || echo 'Mic failed'")
+            execute_streaming(self, f"termux-microphone-record -l {limit} -f {shell_quote(output)} 2>/dev/null && echo 'Recording started' || echo 'Mic failed'")
 
     def _handle_speech_to_text(self, data: dict) -> None:
         execute_streaming(self, "termux-speech-to-text 2>/dev/null || echo 'STT unavailable'")
@@ -765,16 +791,16 @@ class MCPHandler(BaseHTTPRequestHandler):
         action = data.get("action", "info").strip()
         valid = ("play", "pause", "stop", "info", "next", "previous")
         if action not in valid:
-            self._json_response(400, {"error": f"Action must be one of: {', '.join(valid)}"})
+            json_response(self,400, {"error": f"Action must be one of: {', '.join(valid)}"})
             return
         execute_streaming(self, f"termux-media-player {action} 2>/dev/null || echo 'Media player failed'")
 
     def _handle_storage_get(self, data: dict) -> None:
         output = data.get("output", "").strip()
         if not output:
-            self._json_response(400, {"error": "Missing 'output' path"})
+            json_response(self,400, {"error": "Missing 'output' path"})
             return
-        execute_streaming(self, f"termux-storage-get {_shell_quote(output)} 2>/dev/null && echo 'File saved to {output}' || echo 'Storage get failed'")
+        execute_streaming(self, f"termux-storage-get {shell_quote(output)} 2>/dev/null && echo 'File saved to {output}' || echo 'Storage get failed'")
 
     def _handle_telephony_deviceinfo(self, data: dict) -> None:
         execute_streaming(self, "termux-telephony-deviceinfo 2>/dev/null || echo '{}'")
@@ -783,13 +809,13 @@ class MCPHandler(BaseHTTPRequestHandler):
         execute_streaming(self, "termux-telephony-cellinfo 2>/dev/null || echo '[]'")
 
     def _handle_infrared(self, data: dict) -> None:
-        frequency = str(data.get("frequency", "")).strip()
+        frequency = shell_quote_num(data.get("frequency", 0))
         pattern = data.get("pattern", "").strip()
         if not frequency or not pattern:
-            self._json_response(400, {"error": "Missing 'frequency' or 'pattern'"})
+            json_response(self,400, {"error": "Missing 'frequency' or 'pattern'"})
             return
         execute_streaming(self,
-            f"termux-infrared-transmit -f {frequency} {_shell_quote(pattern)} 2>/dev/null && "
+            f"termux-infrared-transmit -f {frequency} {shell_quote(pattern)} 2>/dev/null && "
             f"echo 'IR transmitted' || echo 'IR failed - install termux-infrared'")
 
     # ── Linux Tool Handlers ──────────────────────────────────────────────
@@ -802,13 +828,13 @@ class MCPHandler(BaseHTTPRequestHandler):
         input_file = data.get("input", "").strip()
         output_file = data.get("output", "").strip()
         if not input_file:
-            self._json_response(400, {"error": "Missing 'input' path"})
+            json_response(self,400, {"error": "Missing 'input' path"})
             return
-        if not self._is_safe_path(input_file):
-            self._json_response(403, {"error": "Path not allowed"})
+        if not is_safe_path(input_file):
+            json_response(self,403, {"error": "Path not allowed"})
             return
-        safe_in = _shell_quote(input_file)
-        safe_out = _shell_quote(output_file) if output_file else ""
+        safe_in = shell_quote(input_file)
+        safe_out = shell_quote(output_file) if output_file else ""
 
         if action == "info":
             execute_streaming(self, f"identify -verbose {safe_in} 2>/dev/null || echo 'Install: pkg install imagemagick'")
@@ -826,20 +852,20 @@ class MCPHandler(BaseHTTPRequestHandler):
             degrees = data.get("degrees", 90)
             execute_streaming(self, f"convert {safe_in} -rotate {degrees} {safe_out} 2>/dev/null && echo 'Rotated {degrees}°' || echo 'Failed'")
         else:
-            self._json_response(400, {"error": "Unknown action or missing output"})
+            json_response(self,400, {"error": "Unknown action or missing output"})
 
     def _handle_video_process(self, data: dict) -> None:
         action = data.get("action", "info").strip()
         input_file = data.get("input", "").strip()
         output_file = data.get("output", "").strip()
         if not input_file:
-            self._json_response(400, {"error": "Missing 'input' path"})
+            json_response(self,400, {"error": "Missing 'input' path"})
             return
-        if not self._is_safe_path(input_file):
-            self._json_response(403, {"error": "Path not allowed"})
+        if not is_safe_path(input_file):
+            json_response(self,403, {"error": "Path not allowed"})
             return
-        safe_in = _shell_quote(input_file)
-        safe_out = _shell_quote(output_file) if output_file else ""
+        safe_in = shell_quote(input_file)
+        safe_out = shell_quote(output_file) if output_file else ""
 
         if action == "info":
             execute_streaming(self, f"ffprobe -v quiet -print_format json -show_format -show_streams {safe_in} 2>/dev/null || echo 'Install: pkg install ffmpeg'")
@@ -853,18 +879,18 @@ class MCPHandler(BaseHTTPRequestHandler):
             duration = data.get("duration", 10)
             execute_streaming(self, f"ffmpeg -i {safe_in} -ss {start} -t {duration} -c copy {safe_out} 2>&1 | tail -3 || echo 'Failed'")
         else:
-            self._json_response(400, {"error": "Unknown action or missing output"})
+            json_response(self,400, {"error": "Unknown action or missing output"})
 
     def _handle_text_extract(self, data: dict) -> None:
         input_file = data.get("input", "").strip()
         lang = data.get("lang", "eng").strip()
         if not input_file:
-            self._json_response(400, {"error": "Missing 'input' path"})
+            json_response(self,400, {"error": "Missing 'input' path"})
             return
-        if not self._is_safe_path(input_file):
-            self._json_response(403, {"error": "Path not allowed"})
+        if not is_safe_path(input_file):
+            json_response(self,403, {"error": "Path not allowed"})
             return
-        execute_streaming(self, f"tesseract {_shell_quote(input_file)} stdout -l {lang} 2>/dev/null || echo 'Install: pkg install tesseract'")
+        execute_streaming(self, f"tesseract {shell_quote(input_file)} stdout -l {lang} 2>/dev/null || echo 'Install: pkg install tesseract'")
 
     def _handle_public_ip(self, data: dict) -> None:
         execute_streaming(self, "curl -s https://api.ipify.org 2>/dev/null || curl -s https://ifconfig.me 2>/dev/null || echo 'No internet'")
@@ -872,7 +898,7 @@ class MCPHandler(BaseHTTPRequestHandler):
     def _handle_weather(self, data: dict) -> None:
         city = data.get("city", "").strip()
         if city:
-            execute_streaming(self, f"curl -s wttr.in/{_shell_quote(city)}?format=3 2>/dev/null || echo 'Install curl: pkg install curl'")
+            execute_streaming(self, f"curl -s wttr.in/{shell_quote(city)}?format=3 2>/dev/null || echo 'Install curl: pkg install curl'")
         else:
             execute_streaming(self, "curl -s 'wttr.in/?format=3' 2>/dev/null || echo 'Install curl: pkg install curl'")
 
@@ -881,34 +907,34 @@ class MCPHandler(BaseHTTPRequestHandler):
         target = data.get("target_lang", "en").strip()
         source = data.get("source_lang", "auto").strip()
         if not text:
-            self._json_response(400, {"error": "Missing 'text'"})
+            json_response(self,400, {"error": "Missing 'text'"})
             return
         execute_streaming(self,
             f"curl -s \"https://translate.googleapis.com/translate_a/single?client=gtx&sl={source}&tl={target}&dt=t&q="
-            f"{_shell_quote(text)}\" 2>/dev/null | python3 -c \"import sys,json; print(json.load(sys.stdin)[0][0][0])\" 2>/dev/null "
+            f"{shell_quote(text)}\" 2>/dev/null | python3 -c \"import sys,json; print(json.load(sys.stdin)[0][0][0])\" 2>/dev/null "
             f"|| echo 'Translation failed'")
 
     def _handle_db_query(self, data: dict) -> None:
         db_path = data.get("database", "").strip()
         query = data.get("query", "").strip()
         if not db_path or not query:
-            self._json_response(400, {"error": "Missing 'database' or 'query'"})
+            json_response(self,400, {"error": "Missing 'database' or 'query'"})
             return
-        if not self._is_safe_path(db_path):
-            self._json_response(403, {"error": "Path not allowed"})
+        if not is_safe_path(db_path):
+            json_response(self,403, {"error": "Path not allowed"})
             return
-        execute_streaming(self, f"sqlite3 {_shell_quote(db_path)} {_shell_quote(query)} 2>/dev/null || echo 'Install: pkg install sqlite'")
+        execute_streaming(self, f"sqlite3 {shell_quote(db_path)} {shell_quote(query)} 2>/dev/null || echo 'Install: pkg install sqlite'")
 
     def _handle_web_server(self, data: dict) -> None:
         action = data.get("action", "start").strip()
-        port = str(data.get("port", 8080))
+        port = shell_quote_num(data.get("port", 8080))
         directory = data.get("directory", get_current_dir()).strip()
         if action == "stop":
             execute_streaming(self, f"pkill -f 'python3 -m http.server {port}' 2>/dev/null && echo 'Server stopped' || echo 'No server running'")
         elif action == "status":
             execute_streaming(self, f"pgrep -f 'python3 -m http.server' >/dev/null 2>&1 && echo 'Server running' || echo 'Server not running'")
         else:
-            cmd = f"cd {_shell_quote(directory)} && python3 -m http.server {port} 2>&1"
+            cmd = f"cd {shell_quote(directory)} && python3 -m http.server {port} 2>&1"
             execute_streaming(self, cmd)
 
     def _handle_git_op(self, data: dict) -> None:
@@ -919,30 +945,23 @@ class MCPHandler(BaseHTTPRequestHandler):
 
         if action == "clone":
             if not repo_url:
-                self._json_response(400, {"error": "Missing 'url' for clone"})
+                json_response(self,400, {"error": "Missing 'url' for clone"})
                 return
             if directory:
-                execute_streaming(self, f"git clone {_shell_quote(repo_url)} {_shell_quote(directory)} 2>&1 | tail -10 || echo 'Clone failed'")
+                execute_streaming(self, f"git clone {shell_quote(repo_url)} {shell_quote(directory)} 2>&1 | tail -10 || echo 'Clone failed'")
             else:
-                execute_streaming(self, f"git clone {_shell_quote(repo_url)} 2>&1 | tail -10 || echo 'Clone failed'")
+                execute_streaming(self, f"git clone {shell_quote(repo_url)} 2>&1 | tail -10 || echo 'Clone failed'")
         elif action in ("status", "log", "diff", "pull", "push", "branch"):
-            if not self._is_safe_path(repo_dir):
-                self._json_response(403, {"error": "Path not allowed"})
+            if not is_safe_path(repo_dir):
+                json_response(self,403, {"error": "Path not allowed"})
                 return
             if action == "log":
                 n = data.get("limit", 5)
-                execute_streaming(self, f"cd {_shell_quote(repo_dir)} && git log --oneline -{n} 2>&1 || echo 'Git failed'")
+                execute_streaming(self, f"cd {shell_quote(repo_dir)} && git log --oneline -{n} 2>&1 || echo 'Git failed'")
             elif action == "branch":
-                execute_streaming(self, f"cd {_shell_quote(repo_dir)} && git branch -a 2>&1 || echo 'Git failed'")
+                execute_streaming(self, f"cd {shell_quote(repo_dir)} && git branch -a 2>&1 || echo 'Git failed'")
             else:
-                execute_streaming(self, f"cd {_shell_quote(repo_dir)} && git {action} 2>&1 | tail -20 || echo 'Git failed'")
+                execute_streaming(self, f"cd {shell_quote(repo_dir)} && git {action} 2>&1 | tail -20 || echo 'Git failed'")
         else:
-            self._json_response(400, {"error": f"Unknown action: {action}"})
+            json_response(self,400, {"error": f"Unknown action: {action}"})
 
-    def _is_safe_path(self, path: str) -> bool:
-        """Prevent operations on sensitive system files."""
-        blocked = ("/dev/", "/proc/", "/sys/")
-        for prefix in blocked:
-            if path.startswith(prefix):
-                return False
-        return True

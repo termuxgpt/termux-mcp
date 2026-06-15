@@ -1,13 +1,8 @@
-"""
-AI-Native Termux Power Features — solving real user pain points.
-Each handler runs diagnostic shell commands so the AI agent can understand
-the current state, then take action. The intelligence is in the agent loop —
-these handlers expose the TERMINAL CAPABILITIES the AI needs.
-"""
 import os
 from typing import TYPE_CHECKING
 
 from ..shell import execute_streaming, get_current_dir
+from ..utils import json_response, shell_quote
 
 if TYPE_CHECKING:
     from http.server import BaseHTTPRequestHandler
@@ -15,32 +10,8 @@ if TYPE_CHECKING:
 HOME = os.environ.get("HOME", "/data/data/com.termux/files/home")
 
 
-def _json_response(handler: "BaseHTTPRequestHandler", status: int, payload: dict) -> None:
-    import json
-    body = json.dumps(payload).encode("utf-8")
-    handler.send_response(status)
-    handler.send_header("Content-Type", "application/json")
-    handler.send_header("Content-Length", str(len(body)))
-    handler.end_headers()
-    handler.wfile.write(body)
-
-
-def _shell_quote(s: str) -> str:
-    return "'" + s.replace("'", "'\\''") + "'"
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# 1. SMART INSTALL — AI-powered package install with conflict resolution
-# ═══════════════════════════════════════════════════════════════════════════
 
 def handle_smart_install(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """
-    Install packages intelligently:
-    - Checks if already installed
-    - Detects conflicts between pip/pkg
-    - Creates virtualenv if needed for Python packages
-    - Reports what will be installed before doing it
-    """
     packages = data.get("packages", "").strip()
     manager = data.get("manager", "auto").strip()  # auto, pkg, pip, npm, gem, cargo
     dry_run = data.get("dry_run", False)
@@ -51,15 +22,15 @@ def handle_smart_install(handler: "BaseHTTPRequestHandler", data: dict) -> None:
 
     checks = [
         'echo "=== Pre-Install Check ==="',
-        f'echo Requested: {_shell_quote(packages)}',
-        f'echo Manager: {_shell_quote(manager)}',
+        f'echo Requested: {shell_quote(packages)}',
+        f'echo Manager: {shell_quote(manager)}',
         'echo "---"',
     ]
 
     pkg_list = packages.split()
     for pkg in pkg_list:
-        pkg_safe = _shell_quote(pkg)
-        checks.append(f'echo Checking: {_shell_quote(pkg)}')
+        pkg_safe = shell_quote(pkg)
+        checks.append(f'echo Checking: {shell_quote(pkg)}')
         checks.append(f'pkg list-installed 2>/dev/null | grep -q "^{pkg_safe}/" && echo "  ✅ Already installed via pkg" || echo "  - Not in pkg"')
         checks.append(f'pip show {pkg_safe} 2>/dev/null | grep -q "Name:" && echo "  ✅ Already installed via pip" || echo "  - Not in pip"')
         checks.append(f'npm list -g {pkg_safe} 2>/dev/null | grep -q "{pkg_safe}" && echo "  ✅ Already installed via npm" || echo "  - Not in npm"')
@@ -78,13 +49,12 @@ def handle_smart_install(handler: "BaseHTTPRequestHandler", data: dict) -> None:
 
     if not dry_run:
         checks.append('echo "---"')
-        checks.append(f'echo Installing: {_shell_quote(packages)}')
+        checks.append(f'echo Installing: {shell_quote(packages)}')
         if manager == "pip":
             checks.append(f'pip install {packages} 2>&1 | tail -20')
         elif manager == "pkg":
             checks.append(f'pkg install -y {packages} 2>&1 | tail -20')
         else:
-            # Auto: try pkg first, fall back to pip
             checks.append(f'pkg install -y {packages} 2>&1 | tail -15')
             checks.append('echo "---"')
             checks.append(f'pip install {packages} 2>&1 | tail -15')
@@ -93,12 +63,8 @@ def handle_smart_install(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     execute_streaming(handler, cmd)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# 2. PERMISSION DOCTOR — diagnose and fix storage/permission issues
-# ═══════════════════════════════════════════════════════════════════════════
 
 def handle_permission_fix(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Diagnose Termux permission and storage access issues."""
     target = data.get("target", "all").strip()
 
     checks = ['echo "=== Permission Diagnostic ==="']
@@ -145,12 +111,8 @@ def handle_permission_fix(handler: "BaseHTTPRequestHandler", data: dict) -> None
     execute_streaming(handler, cmd)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# 3. PROFILE — one-command Termux setup for different use cases
-# ═══════════════════════════════════════════════════════════════════════════
 
 def handle_profile(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Set up Termux for a specific use case in one command."""
     profile = data.get("profile", "dev").strip()
     dry_run = data.get("dry_run", False)
 
@@ -249,15 +211,8 @@ def handle_profile(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     execute_streaming(handler, " && ".join(cmds))
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# 4. ERROR EXPLAIN — AI-powered error message interpreter
-# ═══════════════════════════════════════════════════════════════════════════
 
 def handle_error_explain(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """
-    Run diagnostic commands to help the AI explain an error.
-    The AI receives the full context and explains in plain language.
-    """
     error_text = data.get("error", "").strip()
     context_cmd = data.get("command", "").strip()
 
@@ -294,12 +249,8 @@ def handle_error_explain(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     execute_streaming(handler, cmd)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# 5. SSH WIZARD — full SSH setup automation
-# ═══════════════════════════════════════════════════════════════════════════
 
 def handle_ssh_wizard(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Set up SSH server with key generation, config, and connection details."""
     action = data.get("action", "setup").strip()
 
     if action == "setup":
@@ -358,12 +309,8 @@ def handle_ssh_wizard(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     execute_streaming(handler, cmd)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# 6. SERVICE GUARD — manage background services with monitoring
-# ═══════════════════════════════════════════════════════════════════════════
 
 def handle_service_guard(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Manage background services: start with auto-restart, list, stop."""
     action = data.get("action", "list").strip()
     service_name = data.get("name", "").strip()
     service_cmd = data.get("cmd", "").strip()
@@ -385,9 +332,9 @@ def handle_service_guard(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         checks = [
             f'echo "Starting service: {service_name}"',
             f'echo "Command: {service_cmd}"',
-            f'nohup sh -c {_shell_quote(service_cmd)} > /dev/null 2>&1 &',
+            f'nohup sh -c {shell_quote(service_cmd)} > /dev/null 2>&1 &',
             f'sleep 1',
-            f'echo "PID: $(pgrep -f {_shell_quote(service_cmd)} | head -1 || echo unknown)"',
+            f'echo "PID: $(pgrep -f {shell_quote(service_cmd)} | head -1 || echo unknown)"',
             f'echo "✅ Service started"',
             f'echo "---"',
             f'echo "To keep alive, use termux-wake-lock (pkg install termux-api)"',
@@ -398,7 +345,7 @@ def handle_service_guard(handler: "BaseHTTPRequestHandler", data: dict) -> None:
             return
         checks = [
             f'echo "Stopping: {service_name}"',
-            f'pkill -f {_shell_quote(service_name)} 2>/dev/null && echo "  ✅ Stopped" || echo "  Service not found"',
+            f'pkill -f {shell_quote(service_name)} 2>/dev/null && echo "  ✅ Stopped" || echo "  Service not found"',
         ]
     elif action == "wake-lock":
         checks = [
@@ -418,15 +365,11 @@ def handle_service_guard(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     execute_streaming(handler, cmd)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# 7. HISTORY INSIGHT — analyze shell usage patterns
-# ═══════════════════════════════════════════════════════════════════════════
 
 def handle_history_insight(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Analyze shell history to find patterns, suggest aliases, show habits."""
     history_file = data.get("file", f"{HOME}/.bash_history").strip()
     limit = data.get("limit", 100)
-    safe_file = _shell_quote(history_file)
+    safe_file = shell_quote(history_file)
 
     checks = [
         f'echo "=== Shell History Analysis ==="',
@@ -455,12 +398,8 @@ def handle_history_insight(handler: "BaseHTTPRequestHandler", data: dict) -> Non
     execute_streaming(handler, cmd)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# 8. OPTIMIZE — performance analysis and recommendations
-# ═══════════════════════════════════════════════════════════════════════════
 
 def handle_optimize(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Analyze Termux resource usage and suggest optimizations."""
     checks = [
         'echo "=== Performance Analysis ==="',
         'echo "---"',
@@ -495,12 +434,8 @@ def handle_optimize(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     execute_streaming(handler, cmd)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# 9. QUICK CMD — alias and shortcut management
-# ═══════════════════════════════════════════════════════════════════════════
 
 def handle_quick_cmd(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Create and manage command aliases and shortcuts."""
     action = data.get("action", "list").strip()
     alias_name = data.get("name", "").strip()
     alias_cmd = data.get("cmd", "").strip()
@@ -516,12 +451,12 @@ def handle_quick_cmd(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         if not alias_name or not alias_cmd:
             _json_response(handler, 400, {"error": "Missing 'name' and 'cmd' for alias"})
             return
-        safe_alias = _shell_quote(alias_name)
-        safe_cmd = _shell_quote(alias_cmd)
+        safe_alias = shell_quote(alias_name)
+        safe_cmd = shell_quote(alias_cmd)
         checks = [
             f'echo "Adding alias: {alias_name} -> {alias_cmd}"',
-            f'echo "alias {alias_name}={_shell_quote(alias_cmd)}" >> ~/.bashrc',
-            f'alias {alias_name}={_shell_quote(alias_cmd)} 2>/dev/null',
+            f'echo "alias {alias_name}={shell_quote(alias_cmd)}" >> ~/.bashrc',
+            f'alias {alias_name}={shell_quote(alias_cmd)} 2>/dev/null',
             f'echo "✅ Alias added. Restart shell or run: source ~/.bashrc"',
         ]
     elif action == "remove":
@@ -548,12 +483,8 @@ def handle_quick_cmd(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     execute_streaming(handler, cmd)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# 10. PORT MANAGE — network port visibility and management
-# ═══════════════════════════════════════════════════════════════════════════
 
 def handle_port_manage(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Show what's listening, help expose services, manage ports."""
     action = data.get("action", "list").strip()
 
     if action == "list":
@@ -586,26 +517,18 @@ def handle_port_manage(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     execute_streaming(handler, cmd)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# 11. MIGRATE — complete Termux environment backup and restore
-# ═══════════════════════════════════════════════════════════════════════════
 
 def handle_migrate(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """
-    Full environment migration:
-    - Backs up: packages list, configs, crontabs, shell history, custom scripts
-    - Creates a single portable archive with a restore script
-    """
     action = data.get("action", "backup").strip()
     output = data.get("output", f"~/storage/shared/termux_migration.tar.gz").strip()
-    safe_out = _shell_quote(output)
+    safe_out = shell_quote(output)
 
     if action == "backup":
         import time as _time
         ts = _time.strftime("%Y%m%d_%H%M%S")
         if not data.get("output"):
             output = f"~/storage/shared/termux_migration_{ts}.tar.gz"
-            safe_out = _shell_quote(output)
+            safe_out = shell_quote(output)
 
         checks = [
             f'echo "📦 Termux Migration Backup"',
@@ -639,7 +562,7 @@ def handle_migrate(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         if not archive:
             _json_response(handler, 400, {"error": "Missing 'file' — path to migration archive"})
             return
-        safe_archive = _shell_quote(archive)
+        safe_archive = shell_quote(archive)
         checks = [
             f'echo "📥 Restoring from: {archive}"',
             f'echo "---"',
@@ -665,7 +588,7 @@ def handle_migrate(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         if not archive:
             _json_response(handler, 400, {"error": "Missing 'file' to preview"})
             return
-        safe_archive = _shell_quote(archive)
+        safe_archive = shell_quote(archive)
         checks = [
             f'echo "📋 Migration Preview: {archive}"',
             f'tar -tzf {safe_archive} 2>/dev/null || echo "  Cannot read archive"',
@@ -677,12 +600,8 @@ def handle_migrate(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     execute_streaming(handler, cmd)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# 12. TUTORIAL — interactive Termux learning
-# ═══════════════════════════════════════════════════════════════════════════
 
 def handle_tutorial(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Interactive tutorial mode for learning Termux and Linux."""
     topic = data.get("topic", "basics").strip()
 
     topics = {
