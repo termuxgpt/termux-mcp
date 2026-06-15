@@ -16,8 +16,8 @@ def handle_system_info(handler: "BaseHTTPRequestHandler", _data: dict) -> None:
         'cpu=$(top -bn1 2>/dev/null | grep -oP "[0-9.]+%" | head -1 | tr -d "%" || echo 0);'
         'ram_total=$(free -m 2>/dev/null | awk "/Mem:/{print \\$2}" || echo 0);'
         'ram_used=$(free -m 2>/dev/null | awk "/Mem:/{print \\$3}" || echo 0);'
-        'disk_total=$(df -m /data 2>/dev/null | awk "NR==2{print \\$2}" || echo 0);'
-        'disk_used=$(df -m /data 2>/dev/null | awk "NR==2{print \\$3}" || echo 0);'
+        'disk_total=$(df -m /data 2>/dev/null | tail -1 | awk "{print \\$2}" || echo 0);'
+        'disk_used=$(df -m /data 2>/dev/null | tail -1 | awk "{print \\$3}" || echo 0);'
         'temp=0; [ -r /sys/class/thermal/thermal_zone0/temp ] && temp=$(($(cat /sys/class/thermal/thermal_zone0/temp)/1000));'
         'uptime=0; [ -r /proc/uptime ] && uptime=$(awk "{print int(\\$1)}" /proc/uptime);'
         'echo "{\\"cpu_percent\\":\\"$cpu\\",\\"ram_mb_total\\":$ram_total,\\"ram_mb_used\\":$ram_used,\\"disk_mb_total\\":$disk_total,\\"disk_mb_used\\":$disk_used,\\"temp_celsius\\":$temp,\\"uptime_seconds\\":$uptime}"'
@@ -71,10 +71,6 @@ def handle_cron_add(handler: "BaseHTTPRequestHandler", data: dict) -> None:
 
 
 def handle_cron_list(handler: "BaseHTTPRequestHandler", _data: dict) -> None:
-    handler.send_response(200)
-    handler.send_header("Content-Type", "text/plain")
-    handler.send_header("Transfer-Encoding", "chunked")
-    handler.end_headers()
     cmd = (
         'echo "Cron Jobs:";'
         'echo "---";'
@@ -85,10 +81,6 @@ def handle_cron_list(handler: "BaseHTTPRequestHandler", _data: dict) -> None:
 
 def handle_cron_remove(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     label = data.get("label", "").strip()
-    handler.send_response(200)
-    handler.send_header("Content-Type", "text/plain")
-    handler.send_header("Transfer-Encoding", "chunked")
-    handler.end_headers()
 
     if label:
         safe = shell_quote(label)
@@ -114,10 +106,6 @@ def handle_diff(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         return
 
     safe1 = shell_quote(file1)
-    handler.send_response(200)
-    handler.send_header("Content-Type", "text/plain")
-    handler.send_header("Transfer-Encoding", "chunked")
-    handler.end_headers()
 
     if file2:
         if not is_safe_path(file2):
@@ -201,10 +189,6 @@ def handle_health(handler: "BaseHTTPRequestHandler", _data: dict) -> None:
 
 def handle_cloud_sync(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     action = data.get("action", "backup").strip()
-    handler.send_response(200)
-    handler.send_header("Content-Type", "text/plain")
-    handler.send_header("Transfer-Encoding", "chunked")
-    handler.end_headers()
 
     if action == "backup":
         output = data.get("output", f"termux_backup_{time.strftime('%Y%m%d_%H%M%S')}.tar.gz").strip()
