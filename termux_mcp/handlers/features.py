@@ -340,12 +340,14 @@ def handle_recipe_list(handler: "BaseHTTPRequestHandler", _data: dict) -> None:
     recipes = _load_recipes()
     lines = ["Available Recipes:", "---"]
     for key, r in recipes.items():
-        lines.append(f"  {key} — {r['name']}: {r['desc']}")
+        lines.append(f"  {key} - {r['name']}: {r['desc']}")
+    output = "\n".join(lines) + "\n"
+    body = output.encode()
     handler.send_response(200)
     handler.send_header("Content-Type", "text/plain")
-    handler.send_header("Transfer-Encoding", "chunked")
+    handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
-    execute_streaming(handler, "echo '" + "; ".join(lines) + "'")
+    handler.wfile.write(body)
 
 
 def handle_recipe_run(handler: "BaseHTTPRequestHandler", data: dict) -> None:
