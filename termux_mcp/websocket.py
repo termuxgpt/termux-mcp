@@ -145,17 +145,11 @@ def ws_execute(sock, raw_cmd: str) -> None:
     process = None
     killed = threading.Event()
 
-    try:
-        process = subprocess.Popen(
-            f"export PAGER=cat; {cmd}",
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.PIPE,
-            text=True,
-            cwd=get_cwd(),
-            preexec_fn=os.setsid if hasattr(os, "setsid") else None,
-        )
+    kwargs = dict(shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                  stdin=subprocess.PIPE, text=True, cwd=get_cwd())
+    if hasattr(os, "setsid"):
+        kwargs["preexec_fn"] = os.setsid
+    process = subprocess.Popen(f"export PAGER=cat; {cmd}", **kwargs)
 
         with _pid_lock:
             _active_pid = process.pid
