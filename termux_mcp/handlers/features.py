@@ -21,10 +21,13 @@ def handle_system_info(handler: "BaseHTTPRequestHandler", _data: dict) -> None:
         "ram_used=ram[2] if len(ram)>2 else '0';"
         "disk=os.popen('df -m /data 2>/dev/null').readlines();"
         "disk_parts=disk[1].split() if len(disk)>1 else ['0','0','0'];"
-        "temp_s=open('/sys/class/thermal/thermal_zone0/temp').read().strip() if os.path.exists('/sys/class/thermal/thermal_zone0/temp') else '0';"
-        "temp_c=int(temp_s)//1000;"
-        "uptime_s=int(float(open('/proc/uptime').read().split()[0]));"
-        "print(json.dumps({'cpu_percent':cpu_pct.strip(),'ram_mb_total':ram_total,'ram_mb_used':ram_used,'disk_mb_total':disk_parts[1],'disk_mb_used':disk_parts[2],'temp_celsius':temp_c,'uptime_seconds':uptime_s}))\""
+        "t=0;"
+        "try:\n t=int(open('/sys/class/thermal/thermal_zone0/temp').read().strip())//1000\n"
+        "except: pass;"
+        "u=0;"
+        "try:\n u=int(float(open('/proc/uptime').read().split()[0]))\n"
+        "except: pass;"
+        "print(json.dumps({'cpu_percent':cpu_pct.strip(),'ram_mb_total':ram_total,'ram_mb_used':ram_used,'disk_mb_total':disk_parts[1],'disk_mb_used':disk_parts[2],'temp_celsius':t,'uptime_seconds':u}))\""
     )
     execute_streaming(handler, cmd)
 
@@ -51,11 +54,6 @@ def handle_process_kill(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         json_response(handler, 400, {"error": "Valid PID required"})
         return
 
-    handler.send_response(200)
-    handler.send_header("Content-Type", "text/plain")
-    handler.send_header("Transfer-Encoding", "chunked")
-    handler.end_headers()
-
     cmd = (
         f'echo "Killing PID {pid} ...";'
         f'kill -{signal_num} {pid} 2>&1 && echo "Process {pid} terminated" '
@@ -72,11 +70,6 @@ def handle_cron_add(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     if not schedule or not command:
         json_response(handler, 400, {"error": "schedule and command required"})
         return
-
-    handler.send_response(200)
-    handler.send_header("Content-Type", "text/plain")
-    handler.send_header("Transfer-Encoding", "chunked")
-    handler.end_headers()
 
     cmd = (
         f'echo "Adding cron job: {label}";'
@@ -168,11 +161,6 @@ def handle_patch(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     safe_file = shell_quote(target)
     encoded = base64.b64encode(patch_content.encode()).decode()
 
-    handler.send_response(200)
-    handler.send_header("Content-Type", "text/plain")
-    handler.send_header("Transfer-Encoding", "chunked")
-    handler.end_headers()
-
     cmd = (
         f'echo {shell_quote(encoded)} | base64 -d > /tmp/_mcp_patch.diff && '
         f'patch {safe_file} /tmp/_mcp_patch.diff 2>&1 && '
@@ -183,11 +171,6 @@ def handle_patch(handler: "BaseHTTPRequestHandler", data: dict) -> None:
 
 
 def handle_health(handler: "BaseHTTPRequestHandler", _data: dict) -> None:
-    handler.send_response(200)
-    handler.send_header("Content-Type", "text/plain")
-    handler.send_header("Transfer-Encoding", "chunked")
-    handler.end_headers()
-
     cmd = (
         'echo "═══════════════════════════════════";'
         'echo "   🔍 Termux Health Check";'
