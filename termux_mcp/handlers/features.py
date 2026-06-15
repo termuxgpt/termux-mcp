@@ -225,3 +225,42 @@ def handle_cloud_sync(handler: "BaseHTTPRequestHandler", data: dict) -> None:
             f'ls -lh {shell_quote(HOME)}/*.tar.gz 2>/dev/null || echo "No local backups found"'
         )
     execute_streaming(handler, cmd)
+
+
+def handle_git_pr(handler: "BaseHTTPRequestHandler", data: dict) -> None:
+    action = data.get("action", "list").strip()
+    repo = data.get("repo", "").strip()
+    number = str(data.get("number", "")).strip()
+    flags = f" --repo {shell_quote(repo)}" if repo else ""
+
+    if action == "list":
+        state = data.get("state", "open").strip()
+        limit = str(data.get("limit", 10))
+        cmd = (
+            f'echo "PRs ({state}):";'
+            f'gh pr list --state {state} --limit {limit} {flags} 2>&1 || echo "Install: pkg install gh && gh auth login"'
+        )
+    elif action == "view":
+        if not number: json_response(handler, 400, {"error": "PR number required"}); return
+        cmd = f'gh pr view {number} {flags} 2>&1 || echo "PR #{number} not found"'
+    elif action == "diff":
+        if not number: json_response(handler, 400, {"error": "PR number required"}); return
+        cmd = f'gh pr diff {number} {flags} 2>&1 | head -300 || echo "Cannot show diff"'
+    elif action == "merge":
+        if not number: json_response(handler, 400, {"error": "PR number required"}); return
+        method = data.get("method", "merge").strip()
+        cmd = f'echo "Merging PR #{number}..."; gh pr merge {number} --{method} {flags} 2>&1 || echo "Merge failed"'
+    elif action == "approve":
+        if not number: json_response(handler, 400, {"error": "PR number required"}); return
+        cmd = f'gh pr review {number} --approve {flags} 2>&1 || echo "Approve failed"'
+    elif action == "status":
+        cmd = f'echo "PR Status:"; gh pr status {flags} 2>&1 || echo "No PRs or gh not configured"'
+    elif action == "create":
+        title = data.get("title", "").strip()
+        if not title: json_response(handler, 400, {"error": "PR title required"}); return
+        body = data.get("body", "").strip()
+        draft = " --draft" if data.get("draft", False) else ""
+        cmd = f'echo "Creating: {title}..."; gh pr create --title {shell_quote(title)} --body {shell_quote(body or "")} --base {shell_quote(data.get("base","main").strip())}{draft} {flags} 2>&1 || echo "Create failed"'
+    else:
+        cmd = 'echo "Actions: list view diff merge approve status create"'
+    execute_streaming(handler, cmd)
