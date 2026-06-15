@@ -1,35 +1,15 @@
-"""
-Termux Power-Tool Handlers — AI-native features built on Termux's Linux environment.
-Diagnostics, package intelligence, dev environments, code review, backups, and more.
-"""
 import os
 from typing import TYPE_CHECKING
 
 from ..shell import execute_streaming, get_current_dir
+from ..utils import json_response, shell_quote
 
 if TYPE_CHECKING:
     from http.server import BaseHTTPRequestHandler
 
 
-def _json_response(handler: "BaseHTTPRequestHandler", status: int, payload: dict) -> None:
-    import json
-    body = json.dumps(payload).encode("utf-8")
-    handler.send_response(status)
-    handler.send_header("Content-Type", "application/json")
-    handler.send_header("Content-Length", str(len(body)))
-    handler.end_headers()
-    handler.wfile.write(body)
-
-
-def _shell_quote(s: str) -> str:
-    """Wrap in single quotes, properly escaping embedded single quotes."""
-    return "'" + s.replace("'", "'\\''") + "'"
-
-
-# ── AI Auto-Fixer /diagnose ──────────────────────────────────────────────
 
 def handle_diagnose(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Run diagnostic commands and report what's broken."""
     intent = data.get("intent", "python").strip()
     checks = []
 
@@ -76,17 +56,14 @@ def handle_diagnose(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     execute_streaming(handler, cmd)
 
 
-# ── Intelligent Package Install /pkg-smart ───────────────────────────────
 
 def handle_pkg_smart(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Intent-based package discovery and install."""
     intent = data.get("intent", "").strip().lower()
     if not intent:
         _json_response(handler, 400, {"error": "Missing 'intent'. Describe what you want to do."})
         return
 
     do_install = data.get("install", False)
-    # Map intents to packages and a post-install command
     import re
 
     intent_map = {
@@ -147,7 +124,6 @@ def handle_pkg_smart(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     best_match = None
     best_score = 0
     for key, (pkgs, verify) in intent_map.items():
-        # Simple fuzzy matching
         score = 0
         for word in intent.split():
             if word in key:
@@ -167,22 +143,19 @@ def handle_pkg_smart(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         else:
             cmd = f'echo "📦 Suggested packages for: {key}"; echo "Command: pkg install {pkgs}"; echo "---"; echo "Already installed:"; for pkg in {pkgs.split()}; do dpkg -s "$pkg" 2>/dev/null | grep Status | head -1 || echo "  $pkg - NOT installed"; done; echo "---"; echo "To install, use: install: true"'
     else:
-        cmd = f'echo No matching packages found for: {_shell_quote(intent)}; echo Try broader terms like: python, video, web server, nodejs, c++'
+        cmd = f'echo No matching packages found for: {shell_quote(intent)}; echo Try broader terms like: python, video, web server, nodejs, c++'
 
     execute_streaming(handler, cmd)
 
 
-# ── Command Explainer /explain ───────────────────────────────────────────
 
 def handle_explain(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Explain what a shell command does before running it."""
     cmd = data.get("cmd", "").strip()
     if not cmd:
         _json_response(handler, 400, {"error": "Missing 'cmd' to explain"})
         return
 
-    # Build a comprehensive explanation using the shell
-    qcmd = _shell_quote(cmd)
+    qcmd = shell_quote(cmd)
     parts = []
     if "|" in cmd:
         parts.append(f'echo Pipeline: {qcmd}')
@@ -209,33 +182,30 @@ def handle_explain(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     if "npm " in cmd:
         parts.append(f'echo "Node.js package manager (npm)"')
 
-    # Try which to resolve the command
     first_word = cmd.split()[0] if cmd.split() else ""
     if first_word:
         parts.append(f'echo "---"')
-        qfirst = _shell_quote(first_word)
+        qfirst = shell_quote(first_word)
         parts.append(f'which {qfirst} 2>/dev/null && echo "Command found" || echo "Command NOT found — you may need to install it"')
 
     script = " && ".join(parts) if parts else f'echo Command: {qcmd}'
     execute_streaming(handler, f'{script} && echo "---" && echo Original command: {qcmd}')
 
 
-# ── Dev Environment Setup /dev-env ───────────────────────────────────────
 
 def handle_dev_env(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """One-click development environment setup."""
     intent = data.get("intent", "python").strip().lower()
     cwd = get_current_dir()
     project_name = data.get("name", "myproject").strip()
-    qname = _shell_quote(project_name)
+    qname = shell_quote(project_name)
 
     setups = {
         "python": (
             "Python Web Development",
             f'pkg install -y python python-pip 2>&1 | tail -5 && '
             f'pip install flask gunicorn 2>&1 | tail -5 && '
-            f'mkdir -p {_shell_quote(cwd + "/" + project_name)} && '
-            f'cd {_shell_quote(cwd + "/" + project_name)} && '
+            f'mkdir -p {shell_quote(cwd + "/" + project_name)} && '
+            f'cd {shell_quote(cwd + "/" + project_name)} && '
             f'echo "from flask import Flask\\napp = Flask(__name__)\\n@app.route(\'/\')\\ndef hello():\\n    return {{\'status\': \'ok\'}}\\nif __name__ == \'__main__\':\\n    app.run(host=\'0.0.0.0\', port=5000)" > app.py && '
             f'echo Created: {qname}/app.py && '
             f'echo Run: cd {qname} && python app.py'
@@ -244,8 +214,8 @@ def handle_dev_env(handler: "BaseHTTPRequestHandler", data: dict) -> None:
             "Telegram/Discord Bot",
             f'pkg install -y python python-pip 2>&1 | tail -3 && '
             f'pip install python-telegram-bot discord.py 2>&1 | tail -3 && '
-            f'mkdir -p {_shell_quote(cwd + "/" + project_name)} && '
-            f'cd {_shell_quote(cwd + "/" + project_name)} && '
+            f'mkdir -p {shell_quote(cwd + "/" + project_name)} && '
+            f'cd {shell_quote(cwd + "/" + project_name)} && '
             f'echo "# Bot token (get from @BotFather or Discord Developer Portal)\\nTOKEN = \'your_token_here\'\\nprint(\'Bot ready!\')" > bot.py && '
             f'echo Created: {qname}/bot.py'
         ),
@@ -253,14 +223,14 @@ def handle_dev_env(handler: "BaseHTTPRequestHandler", data: dict) -> None:
             "React Frontend",
             f'pkg install -y nodejs 2>&1 | tail -3 && '
             f'npm --version 2>&1 && '
-            f'cd {_shell_quote(cwd)} && '
+            f'cd {shell_quote(cwd)} && '
             f'echo "Run: npx create-react-app {qname}"'
         ),
         "node": (
             "Node.js Backend",
             f'pkg install -y nodejs 2>&1 | tail -3 && '
-            f'mkdir -p {_shell_quote(cwd + "/" + project_name)} && '
-            f'cd {_shell_quote(cwd + "/" + project_name)} && '
+            f'mkdir -p {shell_quote(cwd + "/" + project_name)} && '
+            f'cd {shell_quote(cwd + "/" + project_name)} && '
             f'npm init -y 2>&1 | tail -3 && '
             f'echo "console.log(\'Server ready\');" > index.js && '
             f'echo "Created: {qname}/index.js"'
@@ -268,8 +238,8 @@ def handle_dev_env(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         "c": (
             "C/C++ Development",
             f'pkg install -y clang make gdb 2>&1 | tail -3 && '
-            f'mkdir -p {_shell_quote(cwd + "/" + project_name)} && '
-            f'cd {_shell_quote(cwd + "/" + project_name)} && '
+            f'mkdir -p {shell_quote(cwd + "/" + project_name)} && '
+            f'cd {shell_quote(cwd + "/" + project_name)} && '
             f'echo "#include <stdio.h>\\nint main() {{\\n    printf(\\"Hello from Termux!\\\\n\\");\\n    return 0;\\n}}" > main.c && '
             f'echo "Created: {qname}/main.c" && '
             f'echo "Compile: cd {qname} && clang main.c -o main && ./main"'
@@ -277,8 +247,8 @@ def handle_dev_env(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         "rust": (
             "Rust Development",
             f'pkg install -y rust binutils 2>&1 | tail -3 && '
-            f'cd {_shell_quote(cwd)} && '
-            f'cargo new {_shell_quote(project_name)} 2>&1 && '
+            f'cd {shell_quote(cwd)} && '
+            f'cargo new {shell_quote(project_name)} 2>&1 && '
             f'echo "Created: {qname}/" && '
             f'echo "Run: cd {qname} && cargo run"'
         ),
@@ -286,7 +256,7 @@ def handle_dev_env(handler: "BaseHTTPRequestHandler", data: dict) -> None:
             "Data Science",
             f'pkg install -y python python-pip 2>&1 | tail -3 && '
             f'pip install numpy pandas matplotlib jupyter 2>&1 | tail -5 && '
-            f'mkdir -p {_shell_quote(cwd + "/" + project_name)} && '
+            f'mkdir -p {shell_quote(cwd + "/" + project_name)} && '
             f'echo "Created: {qname}/" && '
             f'echo "Start Jupyter: jupyter notebook"'
         ),
@@ -306,16 +276,14 @@ def handle_dev_env(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         execute_streaming(handler, f'echo "Available environments:"; echo "python, bot, react, node, c, rust, data, termux"')
 
 
-# ── Code Reviewer /review ────────────────────────────────────────────────
 
 def handle_review(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Basic static analysis — the AI will do deeper review from the output."""
     file_path = data.get("file", "").strip()
     if not file_path:
         _json_response(handler, 400, {"error": "Missing 'file' path"})
         return
 
-    safe_path = _shell_quote(file_path)
+    safe_path = shell_quote(file_path)
     ext = os.path.splitext(file_path)[1].lower()
 
     checks = [
@@ -357,16 +325,14 @@ def handle_review(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     execute_streaming(handler, " && ".join(checks))
 
 
-# ── Log Analyzer /log-analyze ────────────────────────────────────────────
 
 def handle_log_analyze(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Read log file and extract errors/warnings."""
     file_path = data.get("file", "").strip()
     if not file_path:
         _json_response(handler, 400, {"error": "Missing 'file' path"})
         return
 
-    safe_path = _shell_quote(file_path)
+    safe_path = shell_quote(file_path)
     cmd = (
         f'echo "Analyzing: {file_path}"; echo "---"; '
         f'echo "Last 200 lines:"; '
@@ -378,10 +344,8 @@ def handle_log_analyze(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     execute_streaming(handler, cmd)
 
 
-# ── Script Generator /script-gen ─────────────────────────────────────────
 
 def handle_script_gen(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Create a shell/Python script from description."""
     description = data.get("description", "").strip()
     script_type = data.get("type", "sh").strip()
     output = data.get("output", "").strip()
@@ -390,7 +354,7 @@ def handle_script_gen(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         _json_response(handler, 400, {"error": "Missing 'description' of what the script should do"})
         return
 
-    safe_out = _shell_quote(output) if output else ""
+    safe_out = shell_quote(output) if output else ""
     if script_type == "py":
         template = f'echo "#!/usr/bin/env python3\\n# Script: {output or "script.py"}\\n# {description}\\n" > {safe_out} && echo "Python template created: {output}"'
     else:
@@ -402,15 +366,13 @@ def handle_script_gen(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         execute_streaming(handler, f'echo "Script described: {description}"\necho "To generate, provide an output path"')
 
 
-# ── Dependency Tree /deps-tree ───────────────────────────────────────────
 
 def handle_deps_tree(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Show package dependency tree."""
     package = data.get("package", "").strip()
     if package:
         execute_streaming(handler,
             f'echo "=== Reverse depends for: {package} ===" && '
-            f'apt-cache rdepends {_shell_quote(package)} 2>/dev/null | head -30 || '
+            f'apt-cache rdepends {shell_quote(package)} 2>/dev/null | head -30 || '
             f'echo "Package not found"'
         )
     else:
@@ -424,10 +386,8 @@ def handle_deps_tree(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         )
 
 
-# ── Storage Auditor /storage-audit ───────────────────────────────────────
 
 def handle_storage_audit(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Find what's eating Termux storage and suggest cleanup."""
     execute_streaming(handler,
         'echo "=== Storage Usage ==="; '
         'df -h /data 2>/dev/null | tail -1; '
@@ -455,10 +415,8 @@ def handle_storage_audit(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     )
 
 
-# ── Config Doctor /config-fix ────────────────────────────────────────────
 
 def handle_config_fix(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Check and report Termux config issues."""
     which_config = data.get("config", "all").strip()
 
     checks = []
@@ -483,13 +441,11 @@ def handle_config_fix(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     execute_streaming(handler, cmd)
 
 
-# ── Smart Git /git-smart ─────────────────────────────────────────────────
 
 def handle_git_smart(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Git operations with AI-friendly output."""
     action = data.get("action", "diff").strip()
     repo_dir = data.get("repo_dir", get_current_dir()).strip()
-    safe_dir = _shell_quote(repo_dir)
+    safe_dir = shell_quote(repo_dir)
 
     if action == "diff-summary":
         cmd = f'cd {safe_dir} && echo "=== Files Changed ===" && git diff --stat 2>&1 | tail -20 && echo "---" && echo "=== Diff ===" && git diff --unified=5 2>&1 | head -200'
@@ -506,10 +462,8 @@ def handle_git_smart(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     execute_streaming(handler, cmd)
 
 
-# ── Regex Generator /regex ───────────────────────────────────────────────
 
 def handle_regex(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Test a regex pattern against test strings."""
     pattern = data.get("pattern", "").strip()
     test_str = data.get("test", "").strip()
 
@@ -517,9 +471,9 @@ def handle_regex(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         _json_response(handler, 400, {"error": "Missing 'pattern'"})
         return
 
-    safe_pattern = _shell_quote(pattern)
+    safe_pattern = shell_quote(pattern)
     if test_str:
-        safe_test = _shell_quote(test_str)
+        safe_test = shell_quote(test_str)
         cmd = (
             f'echo "Pattern: {pattern}" && '
             f'echo "Test: {test_str}" && '
@@ -533,10 +487,8 @@ def handle_regex(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     execute_streaming(handler, cmd)
 
 
-# ── Database Designer /db-design ─────────────────────────────────────────
 
 def handle_db_design(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Create SQLite database from schema description."""
     schema = data.get("schema", "").strip()
     db_path = data.get("output", get_current_dir() + "/database.sqlite").strip()
 
@@ -544,7 +496,7 @@ def handle_db_design(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         _json_response(handler, 400, {"error": "Missing 'schema' — describe your tables"})
         return
 
-    safe_db = _shell_quote(db_path)
+    safe_db = shell_quote(db_path)
     # Just create the database file and echo back the schema
     cmd = (
         f'touch {safe_db} 2>/dev/null && '
@@ -558,10 +510,8 @@ def handle_db_design(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     execute_streaming(handler, cmd)
 
 
-# ── Termux Backup /backup ────────────────────────────────────────────────
 
 def handle_backup(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Backup Termux home directory or specified paths."""
     target = data.get("target", "home").strip()
     output = data.get("output", "").strip()
     include = data.get("include", "").strip().split(",") if data.get("include", "").strip() else []
@@ -573,7 +523,7 @@ def handle_backup(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     if not output:
         output = f"~/storage/shared/termux_backup_{timestamp}.tar.gz"
 
-    safe_out = _shell_quote(output)
+    safe_out = shell_quote(output)
 
     if target == "home":
         cmd = (
@@ -581,7 +531,8 @@ def handle_backup(handler: "BaseHTTPRequestHandler", data: dict) -> None:
             f'echo "Backing up: {home}"; '
             f'echo "Output: {output}"; '
             f'echo "---"; '
-            f'tar -czf {safe_out} -C "$(dirname {home})" "$(basename {home})" --exclude=".cache" --exclude="__pycache__" --exclude="node_modules" --exclude="*.pyc" 2>&1 && '
+            f'tar -czvf {safe_out} -C "$(dirname {home})" "$(basename {home})" --exclude=".cache" --exclude="__pycache__" --exclude="node_modules" --exclude="*.pyc" 2>&1 | while read line; do echo "$line"; done && '
+            f'echo "" && '
             f'echo "✅ Backup complete!" && '
             f'ls -lh {safe_out} || echo "❌ Backup failed"'
         )
@@ -600,7 +551,7 @@ def handle_backup(handler: "BaseHTTPRequestHandler", data: dict) -> None:
             f'ls -lh {safe_out}'
         )
     elif include:
-        inc_paths = " ".join(_shell_quote(p.strip()) for p in include if p.strip())
+        inc_paths = " ".join(shell_quote(p.strip()) for p in include if p.strip())
         cmd = (
             f'mkdir -p "$(dirname {safe_out})" 2>/dev/null; '
             f'echo "Backing up selected paths..." && '
@@ -614,10 +565,8 @@ def handle_backup(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     execute_streaming(handler, cmd)
 
 
-# ── Termux Restore /restore ──────────────────────────────────────────────
 
 def handle_restore(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    """Restore from a Termux backup file."""
     backup_file = data.get("file", "").strip()
     target = data.get("target", "home").strip()
 
@@ -625,7 +574,7 @@ def handle_restore(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         _json_response(handler, 400, {"error": "Missing 'file' — path to backup archive"})
         return
 
-    safe_file = _shell_quote(backup_file)
+    safe_file = shell_quote(backup_file)
     home = os.environ.get("HOME", "/data/data/com.termux/files/home")
 
     if target == "home":
@@ -645,7 +594,7 @@ def handle_restore(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     elif target == "configs":
         cmd = (
             f'echo "Restoring configs from: {backup_file}"; '
-            f'tar -xzf {safe_file} -C {_shell_quote(home)} 2>&1 && '
+            f'tar -xzf {safe_file} -C {shell_quote(home)} 2>&1 && '
             f'echo "✅ Configs restored!" || echo "❌ Restore failed"'
         )
     elif target == "info":
