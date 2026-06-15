@@ -12,11 +12,6 @@ HOME = os.environ.get("HOME", "/data/data/com.termux/files/home")
 
 
 def handle_system_info(handler: "BaseHTTPRequestHandler", _data: dict) -> None:
-    handler.send_response(200)
-    handler.send_header("Content-Type", "text/plain")
-    handler.send_header("Transfer-Encoding", "chunked")
-    handler.end_headers()
-
     cmd = (
         "python3 -c \"import os,json;"
         "cpu=os.popen('top -bn1 2>/dev/null|grep CPU:').read();"
