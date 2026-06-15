@@ -18,23 +18,18 @@ def handle_system_info(handler: "BaseHTTPRequestHandler", _data: dict) -> None:
     handler.end_headers()
 
     cmd = (
-        'echo "{" ;'
-        'cpu=$(top -bn1 2>/dev/null | grep "CPU:" | awk \'{print $2}\' | tr -d "%" || echo "0");'
-        'echo "  \\"cpu_percent\\": $cpu,";'
-        'ram_total=$(free -m 2>/dev/null | awk \'/Mem:/{print $2}\' || echo "0");'
-        'ram_used=$(free -m 2>/dev/null | awk \'/Mem:/{print $3}\' || echo "0");'
-        'echo "  \\"ram_mb_total\\": $ram_total,";'
-        'echo "  \\"ram_mb_used\\": $ram_used,";'
-        'disk_total=$(df -m /data 2>/dev/null | awk \'NR==2{print $2}\' || echo "0");'
-        'disk_used=$(df -m /data 2>/dev/null | awk \'NR==2{print $3}\' || echo "0");'
-        'echo "  \\"disk_mb_total\\": $disk_total,";'
-        'echo "  \\"disk_mb_used\\": $disk_used,";'
-        'temp=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo "0");'
-        'temp_c=$((temp / 1000));'
-        'echo "  \\"temp_celsius\\": $temp_c,";'
-        'uptime_s=$(awk \'{print int($1)}\' /proc/uptime 2>/dev/null || echo "0");'
-        'echo "  \\"uptime_seconds\\": $uptime_s";'
-        'echo "}"'
+        "python3 -c \"import os,json;"
+        "cpu=os.popen('top -bn1 2>/dev/null|grep CPU:').read();"
+        "cpu_pct=cpu.split()[1].replace('%','') if cpu else '0';"
+        "ram=os.popen('free -m 2>/dev/null|grep Mem:').read().split();"
+        "ram_total=ram[1] if len(ram)>1 else '0';"
+        "ram_used=ram[2] if len(ram)>2 else '0';"
+        "disk=os.popen('df -m /data 2>/dev/null').readlines();"
+        "disk_parts=disk[1].split() if len(disk)>1 else ['0','0','0'];"
+        "temp_s=open('/sys/class/thermal/thermal_zone0/temp').read().strip() if os.path.exists('/sys/class/thermal/thermal_zone0/temp') else '0';"
+        "temp_c=int(temp_s)//1000;"
+        "uptime_s=int(float(open('/proc/uptime').read().split()[0]));"
+        "print(json.dumps({'cpu_percent':cpu_pct.strip(),'ram_mb_total':ram_total,'ram_mb_used':ram_used,'disk_mb_total':disk_parts[1],'disk_mb_used':disk_parts[2],'temp_celsius':temp_c,'uptime_seconds':uptime_s}))\""
     )
     execute_streaming(handler, cmd)
 
