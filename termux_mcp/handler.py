@@ -511,11 +511,15 @@ class MCPHandler(BaseHTTPRequestHandler):
 
     def _handle_ls(self, data: dict) -> None:
         path = (data.get("path") or ".").strip()
-        detailed = data.get("detailed", False)
         if not is_safe_path(path):
             json_response(self,403, {"error": "Path not allowed"})
             return
-        flags = "-la" if detailed else "-1"
+        # Always use -la to show dotfiles — Termux home is mostly dotfiles
+        flags = "-la"
+        if data.get("bare"):
+            flags = "-1"
+        elif data.get("no_dotfiles"):
+            flags = "-l"
         execute_streaming(self, f'ls {flags} {shell_quote(path)} 2>/dev/null || echo Cannot access: {shell_quote(path)}')
 
     def _handle_read(self, data: dict) -> None:

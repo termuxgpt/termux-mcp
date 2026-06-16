@@ -222,8 +222,11 @@ def _ws_execute_tool(sock, tool: str, params: dict) -> None:
 
     if tool == "ls":
         path = p.get("path") or "."
-        detailed = p.get("detailed", False)
-        flags = "-la" if detailed else "-1"
+        flags = "-la"
+        if p.get("bare"):
+            flags = "-1"
+        elif p.get("no_dotfiles"):
+            flags = "-l"
         if is_safe_path(path):
             cmd = f'ls {flags} {shell_quote(path)} 2>/dev/null || echo Cannot access: {shell_quote(path)}'
         else:
