@@ -26,6 +26,9 @@ from .handlers.features import (
     handle_git_pr, handle_recipe_list, handle_recipe_run, handle_recipe_save,
     handle_context, handle_context_save,
 )
+from .handlers.history import (
+    handle_history_list, handle_history_save, handle_history_clear,
+)
 from .utils import shell_quote, shell_quote_num, is_safe_path, json_response, is_install_command, encode_base64
 from .tools_schema import OPENAI_TOOLS
 from . import websocket as ws
@@ -121,6 +124,10 @@ class MCPHandler(BaseHTTPRequestHandler):
             ) if hasattr(self.headers, 'as_string') else str(self.headers)
             sock = self.request
             ws.ws_handler(sock, raw_headers)
+            return
+
+        if path == "/history":
+            handle_history_list(self, {})
             return
 
         json_response(self,404, {"error": "Not found"})
@@ -457,6 +464,14 @@ class MCPHandler(BaseHTTPRequestHandler):
             return
         if path == "/context-save":
             handle_context_save(self, data)
+            return
+
+        if path == "/history":
+            handle_history_save(self, data)
+            return
+
+        if path == "/history-clear":
+            handle_history_clear(self, data)
             return
 
         json_response(self,404, {"error": "Not found"})

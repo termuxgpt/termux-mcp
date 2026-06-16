@@ -615,6 +615,46 @@ def _ws_execute_tool(sock, tool: str, params: dict) -> None:
             _ws_send_json(sock, {"error": str(e)})
         return
 
+    # History
+    elif tool == "history":
+        from .handlers.history import _load
+        entries = _load()
+        _ws_send_json(sock, {"entries": entries, "count": len(entries)})
+        return
+
+    elif tool == "history_save":
+        raw_input = (p.get("rawInput") or "").strip()
+        output = (p.get("output") or "").strip()
+        if not raw_input and not output:
+            _ws_send_json(sock, {"error": "Missing rawInput or output"})
+            return
+        from .handlers.history import _load, _save, MAX_ENTRIES
+        entries = _load()
+        entries.append({
+            "rawInput": raw_input,
+            "output": output[:5000] if len(output) > 5000 else output,
+            "ranCommand": (p.get("ranCommand") or "").strip(),
+            "success": p.get("success", True),
+            "traces": p.get("traces") or [],
+            "timestamp": time.time(),
+        })
+        if len(entries) > MAX_ENTRIES:
+            entries = entries[-MAX_ENTRIES:]
+        _save(entries)
+        _ws_send_json(sock, {"saved": True, "total": len(entries)})
+        return
+
+    elif tool == "history_clear":
+        from .handlers.history import HISTORY_FILE
+        try:
+            os.remove(HISTORY_FILE)
+            _ws_send_json(sock, {"cleared": True})
+        except FileNotFoundError:
+            _ws_send_json(sock, {"cleared": True})
+        except Exception as e:
+            _ws_send_json(sock, {"error": str(e)})
+        return
+
     # Session (tmux)
     elif tool == "session_start":
         name = p.get("name", "termux-mcp")
