@@ -45,10 +45,11 @@ def handle_history_save(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         return
 
     entries = _load()
+    ran_cmd = (data.get("ranCommand") or "").strip()
     entry = {
         "rawInput": raw_input,
         "output": output[:5000] if len(output) > 5000 else output,
-        "ranCommand": (data.get("ranCommand") or data.get("ran_command") or "").strip(),
+        "ranCommand": ran_cmd if ran_cmd else None,
         "success": data.get("success", True),
         "traces": data.get("traces") or data.get("agentTraces") or [],
         "timestamp": time.time(),

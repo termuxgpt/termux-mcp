@@ -633,10 +633,11 @@ def _ws_execute_tool(sock, tool: str, params: dict) -> None:
             return
         from .handlers.history import _load, _save, MAX_ENTRIES
         entries = _load()
+        ran_cmd = (p.get("ranCommand") or "").strip()
         entries.append({
             "rawInput": raw_input,
             "output": output[:5000] if len(output) > 5000 else output,
-            "ranCommand": (p.get("ranCommand") or "").strip(),
+            "ranCommand": ran_cmd if ran_cmd else None,
             "success": p.get("success", True),
             "traces": p.get("traces") or [],
             "timestamp": time.time(),
