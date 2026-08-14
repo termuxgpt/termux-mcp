@@ -21,6 +21,31 @@ OP_PONG = 0xA
 
 _ws_session = {"name": None, "created": False}
 
+# Per-session capture offsets for session_poll. tmux sessions are global
+# (shared across connections), so this tracker is global too.
+_session_trackers = {}
+
+
+def _session_capture(sess: str, seen: int):
+    """Return (new_output_since_last_poll, new_seen_offset).
+
+    Uses capture-pane over the whole scrollback so nothing is lost between
+    polls; seen is a line-count offset into that scrollback.
+    """
+    try:
+        out = os.popen(
+            f'tmux capture-pane -p -S - -t {shell_quote(sess)} 2>/dev/null'
+        ).read()
+    except Exception:
+        return "", seen
+    lines = out.split("\n")
+    if len(lines) > seen:
+        new_lines = lines[seen:]
+        seen = len(lines)
+        return "\n".join(new_lines) + "\n", seen
+    return "", seen
+
+
 # Per-connection state lives in a dict created in ws_handler and threaded
 # through the executor — no shared globals (each WS connection gets its own
 # cwd, mirroring the per-thread fix in shell.py for HTTP).
@@ -763,65 +788,89 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
     # Session (tmux)
     elif tool == "session_start":
         name = p.get("name", "termux-mcp")
-        cmd = (f'tmux has-session -t {shell_quote(name)} 2>/dev/null && '
-               f'echo "Session {name} already exists" || '
-               f'(tmux new-session -d -s {shell_quote(name)} 2>&1 && echo "Session {name} created") || '
-               f'echo "tmux not installed - pkg install tmux"')
+        exists = os.popen(
+            f'tmux has-session -t {shell_quote(name)} 2>/dev/null && echo yes || echo no'
+        ).read().strip() == "yes"
+        if not exists:
+            os.system(f'tmux new-session -d -s {shell_quote(name)} 2>/dev/null')
+        # Large scrollback so session_poll never loses output.
+        os.system(
+            f'tmux set-option -t {shell_quote(name)} history-limit 20000 2>/dev/null'
+        )
+        _session_trackers[name] = {"seen": 0}
         _ws_session["name"] = name
         _ws_session["created"] = True
+        _ws_reply(sock, conn, req_id, {
+            "output": f"Session '{name}' ready. Run commands with session_run, "
+                      f"poll output with session_poll."
+        })
+        return
 
     elif tool == "session_run":
+        # NON-BLOCKING: send the command into the tmux session and return
+        # quickly with initial output. The connection lock is held only for
+        # this short call — a 20-minute build no longer blocks other tools.
         sess_name = p.get("session") or _ws_session.get("name") or "termux-mcp"
         cmd_to_run = p.get("cmd", "")
         if not cmd_to_run:
-            _ws_reply(sock, conn, req_id,{"error": "Missing cmd"})
+            _ws_reply(sock, conn, req_id, {"error": "Missing cmd"})
             return
-        # Start session if not created
-        sess_exists = os.popen(f'tmux has-session -t {shell_quote(sess_name)} 2>/dev/null && echo yes || echo no').read().strip()
-        if sess_exists != "yes":
+        exists = os.popen(
+            f'tmux has-session -t {shell_quote(sess_name)} 2>/dev/null && echo yes || echo no'
+        ).read().strip() == "yes"
+        if not exists:
             os.system(f'tmux new-session -d -s {shell_quote(sess_name)} 2>/dev/null')
+            os.system(
+                f'tmux set-option -t {shell_quote(sess_name)} history-limit 20000 2>/dev/null'
+            )
+            _session_trackers[sess_name] = {"seen": 0}
             _ws_session["name"] = sess_name
             _ws_session["created"] = True
-        # Capture lines before command
-        before = int(os.popen(f'tmux capture-pane -p -t {shell_quote(sess_name)} 2>/dev/null | wc -l').read().strip() or 0)
-        # Send command
-        os.system(f'tmux send-keys -t {shell_quote(sess_name)} {shell_quote(cmd_to_run)} Enter')
-        time.sleep(0.3)
-        # Capture output incrementally
-        def _capture_loop():
-            seen = before
-            for _ in range(120):  # up to 60 seconds
-                time.sleep(0.5)
-                try:
-                    output = os.popen(f'tmux capture-pane -p -t {shell_quote(sess_name)} 2>/dev/null').read()
-                    lines = output.split('\n')
-                    if len(lines) > seen:
-                        new_lines = lines[seen:]
-                        seen = len(lines)
-                        for l in new_lines:
-                            if l.strip():
-                                _send_frame(sock, conn, (l + '\n').encode())
-                except Exception:
-                    break
-                # Check if prompt returned (command finished)
-                pane = os.popen(f'tmux capture-pane -p -t {shell_quote(sess_name)} 2>/dev/null | tail -3').read()
-                if '$' in pane or '#' in pane:
-                    break
-        _capture_loop()
-        _ws_reply(sock, conn, req_id,{"output": "Command sent to session " + sess_name})
+
+        tracker = _session_trackers.setdefault(sess_name, {"seen": 0})
+        os.system(
+            f'tmux send-keys -t {shell_quote(sess_name)} {shell_quote(cmd_to_run)} Enter'
+        )
+        time.sleep(1.2)  # brief initial capture — bounded, not 60s
+        initial, tracker["seen"] = _session_capture(sess_name, tracker["seen"])
+        preview = initial.strip()
+        if len(preview) > 2000:
+            preview = preview[-2000:]
+        _ws_reply(sock, conn, req_id, {
+            "output": f"Started in session '{sess_name}':\n{preview or '(no output yet — use session_poll)'}",
+            "session": sess_name,
+        })
+        return
+
+    elif tool == "session_poll":
+        sess_name = p.get("session") or _ws_session.get("name") or "termux-mcp"
+        tracker = _session_trackers.setdefault(sess_name, {"seen": 0})
+        output, tracker["seen"] = _session_capture(sess_name, tracker["seen"])
+        alive = os.popen(
+            f'tmux has-session -t {shell_quote(sess_name)} 2>/dev/null && echo yes || echo no'
+        ).read().strip() == "yes"
+        preview = output.strip()
+        if len(preview) > 4000:
+            preview = preview[-4000:]
+        _ws_reply(sock, conn, req_id, {
+            "output": preview or "(no new output)",
+            "running": alive,
+            "session": sess_name,
+        })
         return
 
     elif tool == "session_list":
         out = os.popen('tmux list-sessions 2>/dev/null || echo "No sessions (tmux not installed?)"').read().strip()
-        _ws_reply(sock, conn, req_id,{"sessions": out})
+        _ws_reply(sock, conn, req_id, {"sessions": out})
         return
 
     elif tool == "session_kill":
         name = p.get("session") or _ws_session.get("name") or "termux-mcp"
         os.system(f'tmux kill-session -t {shell_quote(name)} 2>/dev/null')
+        _session_trackers.pop(name, None)
         _ws_session["name"] = None
         _ws_session["created"] = False
-        _ws_reply(sock, conn, req_id,{"killed": name})
+        _ws_reply(sock, conn, req_id, {"killed": name})
         return
 
     else:
