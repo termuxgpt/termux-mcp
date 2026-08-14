@@ -8,7 +8,6 @@ import struct
 import subprocess
 import threading
 import time
-from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
 from .config import AUTH_TOKEN, AUTO_INPUT_INTERVAL, COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES, REQUIRE_AUTH
@@ -20,25 +19,7 @@ OP_CLOSE = 0x8
 OP_PING = 0x9
 OP_PONG = 0xA
 
-_active_pid: Optional[int] = None
-_pid_lock = threading.Lock()
 _ws_session = {"name": None, "created": False}
-
-
-def cancel_active() -> bool:
-    """Kill the command currently running on this WebSocket connection."""
-    global _active_pid
-    with _pid_lock:
-        pid = _active_pid
-    if pid is None:
-        return False
-    try:
-        os.kill(pid, signal.SIGTERM)
-        return True
-    except ProcessLookupError:
-        return False
-    except OSError:
-        return False
 
 # Per-connection state lives in a dict created in ws_handler and threaded
 # through the executor — no shared globals (each WS connection gets its own
@@ -90,24 +71,40 @@ def _make_frame(payload: bytes, opcode: int = OP_TEXT) -> bytes:
     return frame + payload
 
 
+def _recv_exact(sock, n: int) -> bytes:
+    """Read exactly n bytes — sock.recv may return fewer (TCP stream)."""
+    chunks = []
+    remaining = n
+    while remaining > 0:
+        chunk = sock.recv(remaining)
+        if not chunk:
+            raise ConnectionError("connection closed mid-frame")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
 def _read_frame(sock) -> tuple:
-    b1 = sock.recv(1)
-    if not b1:
-        return None, None
-    b2 = sock.recv(1)
-    if not b2:
-        return None, None
+    b1 = _recv_exact(sock, 1)
+    b2 = _recv_exact(sock, 1)
     opcode = b1[0] & 0x0F
     length = b2[0] & 0x7F
     if length == 126:
-        length = struct.unpack(">H", sock.recv(2))[0]
+        length = struct.unpack(">H", _recv_exact(sock, 2))[0]
     elif length == 127:
-        length = struct.unpack(">Q", sock.recv(8))[0]
-    masks = sock.recv(4)
-    data = bytearray(sock.recv(length))
+        length = struct.unpack(">Q", _recv_exact(sock, 8))[0]
+    masks = _recv_exact(sock, 4)
+    data = bytearray(_recv_exact(sock, length))
     for i in range(length):
         data[i] ^= masks[i % 4]
     return opcode, bytes(data)
+
+
+def _send_frame(sock, conn: dict, payload: bytes, opcode: int = OP_TEXT) -> None:
+    """Send one frame under the connection's send lock so concurrent
+    senders (worker thread + cancel) can never interleave frame bytes."""
+    with conn["send_lock"]:
+        sock.sendall(_make_frame(payload, opcode))
 
 
 def _do_handshake(sock, headers: str) -> bool:
@@ -170,9 +167,13 @@ def _spawn_auto_input(process: subprocess.Popen, cmd: str) -> None:
 
 # ── WebSocket tool executor ───────────────────────────────────────────────────
 
-def _ws_run_process(sock, raw_cmd: str, conn: dict) -> None:
-    """Execute a command and stream output back via WebSocket frames."""
-    global _active_pid
+def _ws_run_process(sock, raw_cmd: str, conn: dict) -> str:
+    """Execute a command, stream output back, and return the collected text.
+
+    Runs on a per-connection worker thread; the frame loop stays free so
+    cancel can be processed mid-command. State (pid, kill flag) lives on the
+    connection, not in globals — multiple connections can't kill each other.
+    """
     raw_cmd = raw_cmd.strip()
 
     if raw_cmd.startswith("cd"):
@@ -183,12 +184,12 @@ def _ws_run_process(sock, raw_cmd: str, conn: dict) -> None:
             if idx != -1:
                 chained = rest[idx + len(sep):].strip()
                 if chained and ok:
-                    sock.sendall(_make_frame(f"cd: {msg}\n".encode()))
+                    _send_frame(sock, conn, f"cd: {msg}\n".encode())
                     raw_cmd = chained
                     break
         else:
-            sock.sendall(_make_frame(f"{msg}\n".encode()))
-            return
+            _send_frame(sock, conn, f"{msg}\n".encode())
+            return msg
 
     cmd = f"export DEBIAN_FRONTEND=noninteractive; {raw_cmd}"
     process = None
@@ -196,6 +197,7 @@ def _ws_run_process(sock, raw_cmd: str, conn: dict) -> None:
     watchdog = None
     sent_bytes = 0
     truncated = False
+    collected = []
 
     try:
         kwargs = dict(shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -204,8 +206,7 @@ def _ws_run_process(sock, raw_cmd: str, conn: dict) -> None:
             kwargs["preexec_fn"] = os.setsid
         process = subprocess.Popen(f"export PAGER=cat; {cmd}", **kwargs)
 
-        with _pid_lock:
-            _active_pid = process.pid
+        conn["active_pid"] = process.pid
         _spawn_auto_input(process, raw_cmd)
 
         # Timeout watchdog — only armed when TERMUX_MCP_TIMEOUT > 0.
@@ -228,9 +229,10 @@ def _ws_run_process(sock, raw_cmd: str, conn: dict) -> None:
             watchdog.start()
 
         for line in process.stdout:
-            if killed.is_set():
+            if killed.is_set() or conn["killed"].is_set():
+                collected.append("\nCancelled\n")
                 try:
-                    sock.sendall(_make_frame(f"\nTimed out after {COMMAND_TIMEOUT}s\n".encode()))
+                    _send_frame(sock, conn, b"\nCancelled\n")
                 except Exception:
                     pass
                 break
@@ -238,45 +240,71 @@ def _ws_run_process(sock, raw_cmd: str, conn: dict) -> None:
             # the process still finishes naturally (install prompts etc.).
             sent_bytes += len(line.encode())
             if sent_bytes <= MAX_OUTPUT_BYTES:
+                collected.append(line)
                 try:
-                    sock.sendall(_make_frame(line.encode()))
+                    _send_frame(sock, conn, line.encode())
                 except Exception:
                     break
             elif not truncated:
                 truncated = True
                 try:
-                    sock.sendall(_make_frame(TRUNCATION_MARKER.encode()))
+                    _send_frame(sock, conn, TRUNCATION_MARKER.encode())
                 except Exception:
                     pass
 
         if watchdog is not None:
             watchdog.join(timeout=2)
-        if not killed.is_set():
-            tag = "Done" if process.returncode == 0 else f"Exit: {process.returncode}"
+        if not killed.is_set() and not conn["killed"].is_set():
+            # Best-effort reap so the exit tag shows a real code, not None.
+            if process.returncode is None:
+                try:
+                    process.wait(timeout=2)
+                except Exception:
+                    pass
+            if process.returncode is None:
+                tag = "Exit: (process detached)"
+            else:
+                tag = "Done" if process.returncode == 0 else f"Exit: {process.returncode}"
+            collected.append(f"\n{tag}\n")
             try:
-                sock.sendall(_make_frame(f"\n{tag}\n".encode()))
+                _send_frame(sock, conn, f"\n{tag}\n".encode())
             except Exception:
                 pass
     except Exception as e:
+        collected.append(f"\nError: {e}\n")
         try:
-            sock.sendall(_make_frame(f"\nError: {e}\n".encode()))
+            _send_frame(sock, conn, f"\nError: {e}\n".encode())
         except Exception:
             pass
     finally:
-        with _pid_lock:
-            _active_pid = None
+        conn["active_pid"] = None
+
+    return "".join(collected)
 
 
-def _ws_send_json(sock, data: dict) -> None:
-    sock.sendall(_make_frame(json.dumps(data).encode()))
+def _ws_send_json(sock, conn: dict, data: dict) -> None:
+    _send_frame(sock, conn, json.dumps(data).encode())
 
 
-def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
+def _ws_reply(sock, conn, req_id, data: dict) -> None:
+    """Send a tool result WITH the request id — the client completes the
+    pending request only when it sees `_id`. Without this every WS call
+    hangs on the client until its own timeout."""
+    payload = dict(data)
+    payload["_id"] = req_id
+    _ws_send_json(sock, conn, payload)
+
+
+def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
     """Execute any tool and stream output via WebSocket."""
     p = params or {}
 
     if tool == "run":
-        _ws_run_process(sock, p.get("cmd", ""), conn)
+        out = _ws_run_process(sock, p.get("cmd", ""), conn)
+        # Legacy clients (live terminal) send no _id and only stream text —
+        # skip the JSON reply for them.
+        if req_id is not None:
+            _ws_reply(sock, conn, req_id,{"output": out})
         return
 
     # Build and execute command for each tool type
@@ -292,16 +320,16 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
         if is_safe_path(path):
             cmd = f'ls {flags} {shell_quote(path)} 2>/dev/null || echo Cannot access: {shell_quote(path)}'
         else:
-            _ws_send_json(sock, {"error": "Path not allowed"})
+            _ws_reply(sock, conn, req_id,{"error": "Path not allowed"})
             return
 
     elif tool == "read":
         path = p.get("path", "")
         if not path:
-            _ws_send_json(sock, {"error": "Missing path"})
+            _ws_reply(sock, conn, req_id,{"error": "Missing path"})
             return
         if not is_safe_path(path):
-            _ws_send_json(sock, {"error": "Path not allowed"})
+            _ws_reply(sock, conn, req_id,{"error": "Path not allowed"})
             return
         cmd = f'head -n 500 {shell_quote(path)} 2>/dev/null || echo Cannot read: {shell_quote(path)}'
 
@@ -309,10 +337,10 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
         path = p.get("path", "")
         content = p.get("content", "")
         if not path:
-            _ws_send_json(sock, {"error": "Missing path"})
+            _ws_reply(sock, conn, req_id,{"error": "Missing path"})
             return
         if not is_safe_path(path):
-            _ws_send_json(sock, {"error": "Path not allowed"})
+            _ws_reply(sock, conn, req_id,{"error": "Path not allowed"})
             return
         encoded = encode_base64(content)
         cmd = (f'mkdir -p "$(dirname {shell_quote(path)})" 2>/dev/null; '
@@ -322,7 +350,7 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
     elif tool == "mkdir":
         path = p.get("path", "")
         if not path or not is_safe_path(path):
-            _ws_send_json(sock, {"error": "Invalid path"})
+            _ws_reply(sock, conn, req_id,{"error": "Invalid path"})
             return
         cmd = f'mkdir -p {shell_quote(path)} && echo Created: {shell_quote(path)}'
 
@@ -330,7 +358,7 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
         path = p.get("path", "")
         recursive = p.get("recursive", False)
         if not path or not is_safe_path(path):
-            _ws_send_json(sock, {"error": "Invalid path"})
+            _ws_reply(sock, conn, req_id,{"error": "Invalid path"})
             return
         flags = "-rf" if recursive else ""
         cmd = f'rm {flags} {shell_quote(path)} 2>/dev/null && echo Deleted: {shell_quote(path)} || echo Failed to delete: {shell_quote(path)}'
@@ -339,13 +367,24 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
         path = p.get("path") or "."
         pattern = p.get("pattern") or p.get("query") or p.get("name") or "*"
         if not is_safe_path(path):
-            _ws_send_json(sock, {"error": "Path not allowed"})
+            _ws_reply(sock, conn, req_id,{"error": "Path not allowed"})
             return
         cmd = f'find {shell_quote(path)} -name {shell_quote(pattern)} -type f 2>/dev/null | head -n 30'
 
     elif tool == "cancel":
-        ok = cancel_active()
-        _ws_send_json(sock, {"cancelled": ok})
+        # Per-connection cancel: flag the running command and kill its pid.
+        # Runs on the frame-loop thread (no lock needed) so it can interrupt
+        # a command that is mid-stream on another thread.
+        conn["killed"].set()
+        pid = conn["active_pid"]
+        ok = False
+        if pid is not None:
+            try:
+                os.kill(pid, signal.SIGTERM)
+                ok = True
+            except (ProcessLookupError, OSError):
+                ok = False
+        _ws_reply(sock, conn, req_id,{"cancelled": ok})
         return
 
     # Device tools
@@ -374,7 +413,7 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
     elif tool == "clipboard_set":
         text = p.get("text", "")
         if not text:
-            _ws_send_json(sock, {"error": "Missing text"})
+            _ws_reply(sock, conn, req_id,{"error": "Missing text"})
             return
         cmd = f"echo {shell_quote(text)} | termux-clipboard-set && echo 'Clipboard set' || echo Failed"
 
@@ -383,7 +422,7 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
         title = p.get("title", "TermuxGPT")
         content = p.get("content", "")
         if not content:
-            _ws_send_json(sock, {"error": "Missing content"})
+            _ws_reply(sock, conn, req_id,{"error": "Missing content"})
             return
         cmd = f"termux-notification --title {shell_quote(title)} --content {shell_quote(content)} 2>/dev/null && echo 'Notification sent' || echo 'Notification failed'"
 
@@ -391,21 +430,21 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
         number = p.get("number", "")
         text = p.get("text", "")
         if not number or not text:
-            _ws_send_json(sock, {"error": "Missing number or text"})
+            _ws_reply(sock, conn, req_id,{"error": "Missing number or text"})
             return
         cmd = f"termux-sms-send -n {shell_quote(number)} {shell_quote(text)} 2>/dev/null && echo 'SMS sent' || echo 'SMS failed'"
 
     elif tool == "tts":
         text = p.get("text", "")
         if not text:
-            _ws_send_json(sock, {"error": "Missing text"})
+            _ws_reply(sock, conn, req_id,{"error": "Missing text"})
             return
         cmd = f"termux-tts-speak {shell_quote(text)} 2>/dev/null && echo 'Spoken' || echo 'TTS failed'"
 
     elif tool == "toast":
         text = p.get("text", "")
         if not text:
-            _ws_send_json(sock, {"error": "Missing text"})
+            _ws_reply(sock, conn, req_id,{"error": "Missing text"})
             return
         cmd = f"termux-toast {shell_quote(text)} 2>/dev/null && echo 'Toast shown' || echo 'Toast failed'"
 
@@ -419,14 +458,14 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
                    f"termux-share -a send /data/data/com.termux/files/usr/tmp/_ws_share.txt 2>/dev/null && "
                    f"echo 'Share opened' || echo 'Share failed'")
         else:
-            _ws_send_json(sock, {"error": "Missing text or file"})
+            _ws_reply(sock, conn, req_id,{"error": "Missing text or file"})
             return
 
     # Smart
     elif tool == "smart_install":
         packages = p.get("packages", "")
         if not packages:
-            _ws_send_json(sock, {"error": "Missing packages"})
+            _ws_reply(sock, conn, req_id,{"error": "Missing packages"})
             return
         cmd = f"pkg install -y {packages} 2>&1 | tail -30"
 
@@ -452,7 +491,7 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
     elif tool == "download":
         url = p.get("url", "")
         if not url:
-            _ws_send_json(sock, {"error": "Missing url"})
+            _ws_reply(sock, conn, req_id,{"error": "Missing url"})
             return
         cmd = f"termux-download {shell_quote(url)} 2>/dev/null && echo 'Download started' || echo 'Download failed'"
 
@@ -471,7 +510,7 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
         text = p.get("text", "")
         output = p.get("output", "qr.png")
         if not text:
-            _ws_send_json(sock, {"error": "Missing text"})
+            _ws_reply(sock, conn, req_id,{"error": "Missing text"})
             return
         cmd = f"qrencode -o {shell_quote(output)} {shell_quote(text)} 2>/dev/null && echo 'QR saved to {output}' || echo 'Install: pkg install qrencode'"
 
@@ -480,7 +519,7 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
         inp = p.get("input", "")
         out = p.get("output", "")
         if not inp:
-            _ws_send_json(sock, {"error": "Missing input"})
+            _ws_reply(sock, conn, req_id,{"error": "Missing input"})
             return
         if action == "info":
             cmd = f"identify -verbose {shell_quote(inp)} 2>/dev/null || echo 'Install: pkg install imagemagick'"
@@ -493,7 +532,7 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
     elif tool == "ocr":
         inp = p.get("input", "")
         if not inp:
-            _ws_send_json(sock, {"error": "Missing input"})
+            _ws_reply(sock, conn, req_id,{"error": "Missing input"})
             return
         cmd = f"tesseract {shell_quote(inp)} stdout 2>/dev/null || echo 'Install: pkg install tesseract'"
 
@@ -513,7 +552,7 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
     elif tool == "process_kill":
         pid = p.get("pid", "")
         if not pid:
-            _ws_send_json(sock, {"error": "Missing pid"})
+            _ws_reply(sock, conn, req_id,{"error": "Missing pid"})
             return
         cmd = f"kill -15 {pid} 2>&1 && echo 'Process {pid} terminated' || echo 'Failed to kill {pid}'"
 
@@ -531,7 +570,7 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
         command = p.get("command", "")
         label = p.get("label", "task")
         if not schedule or not command:
-            _ws_send_json(sock, {"error": "Missing schedule or command"})
+            _ws_reply(sock, conn, req_id,{"error": "Missing schedule or command"})
             return
         cmd = (f'(crontab -l 2>/dev/null; echo "# {label}"; '
                f'echo "{schedule} {command}") | crontab - 2>&1 && '
@@ -564,7 +603,7 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
         file = p.get("file", "")
         target = p.get("target", "home")
         if not file:
-            _ws_send_json(sock, {"error": "Missing file path"})
+            _ws_reply(sock, conn, req_id,{"error": "Missing file path"})
             return
         if target == "packages":
             cmd = f'xargs pkg install -y < {shell_quote(file)} 2>&1 | tail -20 && echo "Packages restored"'
@@ -623,7 +662,7 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
         lines = ["Recipes:"]
         for key, r in recipes.items():
             lines.append(f"  {key} - {r['name']}: {r['desc']}")
-        _ws_send_json(sock, {"output": "\n".join(lines)})
+        _ws_reply(sock, conn, req_id,{"output": "\n".join(lines)})
         return
 
     elif tool == "recipe_run":
@@ -632,7 +671,7 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
         recipes = _load_recipes()
         recipe = recipes.get(recipe_id)
         if not recipe:
-            _ws_send_json(sock, {"error": f"Recipe '{recipe_id}' not found"})
+            _ws_reply(sock, conn, req_id,{"error": f"Recipe '{recipe_id}' not found"})
             return
         cmd = " && ".join([f'echo "> {s}" && {s}' for s in recipe["steps"]])
 
@@ -643,12 +682,12 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
         desc = p.get("desc", "")
         steps = p.get("steps", [])
         if not recipe_id or not name or not steps:
-            _ws_send_json(sock, {"error": "Missing recipe, name, or steps"})
+            _ws_reply(sock, conn, req_id,{"error": "Missing recipe, name, or steps"})
             return
         recipes = _load_recipes()
         recipes[recipe_id] = {"name": name, "desc": desc, "steps": steps}
         _save_recipes(recipes)
-        _ws_send_json(sock, {"saved": recipe_id, "total": len(recipes)})
+        _ws_reply(sock, conn, req_id,{"saved": recipe_id, "total": len(recipes)})
         return
 
     # Context
@@ -659,7 +698,7 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
                 ctx = json.load(f)
         except Exception:
             ctx = {"note": "No context saved yet"}
-        _ws_send_json(sock, ctx)
+        _ws_reply(sock, conn, req_id,ctx)
         return
 
     elif tool == "context_save":
@@ -675,23 +714,23 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
         try:
             with open(CONTEXT_FILE, "w") as f:
                 json.dump(ctx, f, indent=2)
-            _ws_send_json(sock, {"saved": ctx})
+            _ws_reply(sock, conn, req_id,{"saved": ctx})
         except Exception as e:
-            _ws_send_json(sock, {"error": str(e)})
+            _ws_reply(sock, conn, req_id,{"error": str(e)})
         return
 
     # History
     elif tool == "history":
         from .handlers.history import _load
         entries = _load()
-        _ws_send_json(sock, {"entries": entries, "count": len(entries)})
+        _ws_reply(sock, conn, req_id,{"entries": entries, "count": len(entries)})
         return
 
     elif tool == "history_save":
         raw_input = (p.get("rawInput") or "").strip()
         output = (p.get("output") or "").strip()
         if not raw_input and not output:
-            _ws_send_json(sock, {"error": "Missing rawInput or output"})
+            _ws_reply(sock, conn, req_id,{"error": "Missing rawInput or output"})
             return
         from .handlers.history import _load, _save, MAX_ENTRIES
         entries = _load()
@@ -707,18 +746,18 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
         if len(entries) > MAX_ENTRIES:
             entries = entries[-MAX_ENTRIES:]
         _save(entries)
-        _ws_send_json(sock, {"saved": True, "total": len(entries)})
+        _ws_reply(sock, conn, req_id,{"saved": True, "total": len(entries)})
         return
 
     elif tool == "history_clear":
         from .handlers.history import HISTORY_FILE
         try:
             os.remove(HISTORY_FILE)
-            _ws_send_json(sock, {"cleared": True})
+            _ws_reply(sock, conn, req_id,{"cleared": True})
         except FileNotFoundError:
-            _ws_send_json(sock, {"cleared": True})
+            _ws_reply(sock, conn, req_id,{"cleared": True})
         except Exception as e:
-            _ws_send_json(sock, {"error": str(e)})
+            _ws_reply(sock, conn, req_id,{"error": str(e)})
         return
 
     # Session (tmux)
@@ -735,7 +774,7 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
         sess_name = p.get("session") or _ws_session.get("name") or "termux-mcp"
         cmd_to_run = p.get("cmd", "")
         if not cmd_to_run:
-            _ws_send_json(sock, {"error": "Missing cmd"})
+            _ws_reply(sock, conn, req_id,{"error": "Missing cmd"})
             return
         # Start session if not created
         sess_exists = os.popen(f'tmux has-session -t {shell_quote(sess_name)} 2>/dev/null && echo yes || echo no').read().strip()
@@ -761,7 +800,7 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
                         seen = len(lines)
                         for l in new_lines:
                             if l.strip():
-                                sock.sendall(_make_frame((l + '\n').encode()))
+                                _send_frame(sock, conn, (l + '\n').encode())
                 except Exception:
                     break
                 # Check if prompt returned (command finished)
@@ -769,12 +808,12 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
                 if '$' in pane or '#' in pane:
                     break
         _capture_loop()
-        _ws_send_json(sock, {"output": "Command sent to session " + sess_name})
+        _ws_reply(sock, conn, req_id,{"output": "Command sent to session " + sess_name})
         return
 
     elif tool == "session_list":
         out = os.popen('tmux list-sessions 2>/dev/null || echo "No sessions (tmux not installed?)"').read().strip()
-        _ws_send_json(sock, {"sessions": out})
+        _ws_reply(sock, conn, req_id,{"sessions": out})
         return
 
     elif tool == "session_kill":
@@ -782,15 +821,20 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
         os.system(f'tmux kill-session -t {shell_quote(name)} 2>/dev/null')
         _ws_session["name"] = None
         _ws_session["created"] = False
-        _ws_send_json(sock, {"killed": name})
+        _ws_reply(sock, conn, req_id,{"killed": name})
         return
 
     else:
-        _ws_send_json(sock, {"error": f"Unknown tool: {tool}"})
+        _ws_reply(sock, conn, req_id,{"error": f"Unknown tool: {tool}"})
         return
 
     if cmd:
-        _ws_run_process(sock, cmd, conn)
+        # Every shell-backed tool must reply with _id — otherwise the client
+        # hangs forever (it completes requests only on an _id frame).
+        out = _ws_run_process(sock, cmd, conn)
+        if req_id is not None:
+            _ws_reply(sock, conn, req_id, {"output": out})
+        return
 
 
 # ── WebSocket handler ─────────────────────────────────────────────────────────
@@ -806,8 +850,12 @@ def ws_handler(sock, raw_headers: str, path: str = "") -> None:
         sock.close()
         return
 
-    # Per-connection state (own cwd per WebSocket connection).
-    conn = {"cwd": HOME}
+    # Per-connection state: own cwd, own active pid, own kill flag, and a
+    # lock so only one tool runs at a time on this connection. `cancel` is
+    # the exception — it runs on the frame loop without the lock so it can
+    # interrupt a command streaming on the worker thread.
+    conn = {"cwd": HOME, "active_pid": None, "killed": threading.Event(),
+            "lock": threading.Lock(), "send_lock": threading.Lock()}
 
     try:
         while True:
@@ -815,7 +863,7 @@ def ws_handler(sock, raw_headers: str, path: str = "") -> None:
             if opcode is None or opcode == OP_CLOSE:
                 break
             if opcode == OP_PING:
-                sock.sendall(_make_frame(data, OP_PONG))
+                _send_frame(sock, conn, data, OP_PONG)
                 continue
             if opcode == OP_TEXT and data:
                 try:
@@ -825,15 +873,37 @@ def ws_handler(sock, raw_headers: str, path: str = "") -> None:
 
                 tool = msg.get("tool")
                 params = msg.get("params", {})
+                req_id = msg.get("_id")
 
-                if tool:
-                    # New generic tool routing
-                    _ws_execute_tool(sock, tool, params, conn)
-                else:
-                    # Backward compat: legacy {"cmd": "..."} messages
-                    cmd = msg.get("cmd", "")
-                    if cmd:
-                        _ws_execute_tool(sock, "run", {"cmd": cmd}, conn)
+                if tool == "cancel":
+                    # Interrupt path — must NOT wait for the worker lock.
+                    _ws_execute_tool(sock, "cancel", params, conn, req_id)
+                    continue
+
+                if tool is None and msg.get("cmd"):
+                    # Backward compat: legacy {"cmd": "..."} live-terminal
+                    # messages — stream only, no _id, no JSON reply. Shares
+                    # the connection lock so it can't race a tool call.
+                    def _legacy(cmd=msg["cmd"]):
+                        with conn["lock"]:
+                            try:
+                                _ws_execute_tool(sock, "run", {"cmd": cmd}, conn, None)
+                            except Exception:
+                                import traceback
+                                traceback.print_exc()
+
+                    threading.Thread(target=_legacy, daemon=True).start()
+                    continue
+
+                def _run(tool=tool, params=params, req_id=req_id):
+                    with conn["lock"]:
+                        try:
+                            _ws_execute_tool(sock, tool, params, conn, req_id)
+                        except Exception:
+                            import traceback
+                            traceback.print_exc()
+
+                threading.Thread(target=_run, daemon=True).start()
     except Exception:
         pass
     finally:
