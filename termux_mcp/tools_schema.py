@@ -736,6 +736,19 @@ OPENAI_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "session_poll",
+            "description": "Get new output from a running tmux session since the last poll (or since session_run). Returns output + whether the session is still alive.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "session": {"type": "string", "description": "Session name"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "history",
             "description": "List previous task history entries.",
             "parameters": {"type": "object", "properties": {}}
@@ -794,6 +807,7 @@ TOOL_CATEGORIES = {
     "context": "context", "context_save": "context",
     "session_start": "session", "session_run": "session",
     "session_list": "session", "session_kill": "session",
+    "session_poll": "session",
     "history": "history", "history_save": "history", "history_clear": "history",
 }
 
