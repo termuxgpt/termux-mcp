@@ -7,6 +7,11 @@ HOME: str = os.environ.get("HOME", "/data/data/com.termux/files/home")
 
 COMMAND_TIMEOUT: int = int(os.environ.get("TERMUX_MCP_TIMEOUT", 120))
 
+# Cap on streamed command output sent to clients. Output beyond this is
+# drained (process keeps running) but discarded, with a truncation marker
+# appended. Keeps LLM tool results small and token-efficient.
+MAX_OUTPUT_BYTES: int = int(os.environ.get("TERMUX_MCP_MAX_OUTPUT", 20000))
+
 AUTH_TOKEN: str = os.environ.get("TERMUX_MCP_AUTH_TOKEN", "")
 REQUIRE_AUTH: bool = bool(AUTH_TOKEN)
 

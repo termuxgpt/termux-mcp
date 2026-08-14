@@ -5,7 +5,7 @@ import threading
 import time
 from typing import TYPE_CHECKING, Optional
 
-from .config import AUTO_INPUT_INTERVAL, COMMAND_TIMEOUT, HOME
+from .config import AUTO_INPUT_INTERVAL, COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES
 from .utils import is_install_command
 
 if TYPE_CHECKING:
@@ -172,6 +172,12 @@ def _run_process(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
     cmd = preprocess(raw_cmd)
     process = None
     killed = threading.Event()
+    sent_bytes = 0
+    truncated = False
+    truncation_marker = (
+        f"\n[Output truncated: max {MAX_OUTPUT_BYTES} bytes — "
+        f"full output not sent]\n"
+    )
 
     try:
         popen_kwargs = {
@@ -211,10 +217,17 @@ def _run_process(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
 
         # Read stdout line by line (Bug 6: watchdog runs in parallel)
         for line in process.stdout:
-            _send_chunk(handler, line)
             if killed.is_set():
                 _send_chunk(handler, f"\n⏱️ Timed out after {COMMAND_TIMEOUT}s\n")
                 break
+            # Output cap: send up to MAX_OUTPUT_BYTES, then drain silently so
+            # the process still finishes naturally (install prompts etc.).
+            sent_bytes += len(line.encode())
+            if sent_bytes <= MAX_OUTPUT_BYTES:
+                _send_chunk(handler, line)
+            elif not truncated:
+                truncated = True
+                _send_chunk(handler, truncation_marker)
 
         watchdog.join(timeout=2)
 
