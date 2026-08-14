@@ -228,4 +228,10 @@ For long-running commands, a watchdog thread enforces the timeout. Package insta
 
 ## License
 
-MIT
+**GNU Affero General Public License v3.0 (AGPL-3.0)**
+
+Copyleft — anyone who distributes a modified version, or hosts it as a
+service (SaaS), must release their changes under the same license.
+
+Note: versions up to 0.8.3 were released under the MIT License; those
+releases keep their MIT terms. AGPL-3.0 applies from 0.8.4 onward.
