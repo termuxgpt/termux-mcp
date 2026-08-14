@@ -24,6 +24,22 @@ _active_pid: Optional[int] = None
 _pid_lock = threading.Lock()
 _ws_session = {"name": None, "created": False}
 
+
+def cancel_active() -> bool:
+    """Kill the command currently running on this WebSocket connection."""
+    global _active_pid
+    with _pid_lock:
+        pid = _active_pid
+    if pid is None:
+        return False
+    try:
+        os.kill(pid, signal.SIGTERM)
+        return True
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return False
+
 # Per-connection state lives in a dict created in ws_handler and threaded
 # through the executor — no shared globals (each WS connection gets its own
 # cwd, mirroring the per-thread fix in shell.py for HTTP).
@@ -177,6 +193,7 @@ def _ws_run_process(sock, raw_cmd: str, conn: dict) -> None:
     cmd = f"export DEBIAN_FRONTEND=noninteractive; {raw_cmd}"
     process = None
     killed = threading.Event()
+    watchdog = None
     sent_bytes = 0
     truncated = False
 
@@ -191,21 +208,24 @@ def _ws_run_process(sock, raw_cmd: str, conn: dict) -> None:
             _active_pid = process.pid
         _spawn_auto_input(process, raw_cmd)
 
-        def _timeout_watchdog() -> None:
-            try:
-                process.wait(timeout=COMMAND_TIMEOUT)
-            except subprocess.TimeoutExpired:
-                killed.set()
+        # Timeout watchdog — only armed when TERMUX_MCP_TIMEOUT > 0.
+        # Default 0 = commands run until they finish (pkg upgrade etc.).
+        if COMMAND_TIMEOUT > 0:
+            def _timeout_watchdog() -> None:
                 try:
-                    if hasattr(os, "killpg"):
-                        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-                        time.sleep(1)
-                    process.kill()
-                except Exception:
-                    process.kill()
+                    process.wait(timeout=COMMAND_TIMEOUT)
+                except subprocess.TimeoutExpired:
+                    killed.set()
+                    try:
+                        if hasattr(os, "killpg"):
+                            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                            time.sleep(1)
+                        process.kill()
+                    except Exception:
+                        process.kill()
 
-        watchdog = threading.Thread(target=_timeout_watchdog, daemon=True)
-        watchdog.start()
+            watchdog = threading.Thread(target=_timeout_watchdog, daemon=True)
+            watchdog.start()
 
         for line in process.stdout:
             if killed.is_set():
@@ -229,7 +249,8 @@ def _ws_run_process(sock, raw_cmd: str, conn: dict) -> None:
                 except Exception:
                     pass
 
-        watchdog.join(timeout=2)
+        if watchdog is not None:
+            watchdog.join(timeout=2)
         if not killed.is_set():
             tag = "Done" if process.returncode == 0 else f"Exit: {process.returncode}"
             try:

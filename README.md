@@ -38,7 +38,7 @@ curl -X POST http://localhost:8080/run -H "Content-Type: application/json" -d '{
 |---|---|---|
 | `TERMUX_MCP_PORT` | `8080` | HTTP listen port |
 | `TERMUX_MCP_HOST` | `127.0.0.1` | Bind address. Use `127.0.0.1` for local-only. |
-| `TERMUX_MCP_TIMEOUT` | `120` | Command timeout in seconds |
+| `TERMUX_MCP_TIMEOUT` | `0` | Command timeout in seconds. `0` = **no timeout** (default) — long operations like `pkg upgrade` run until they finish. Set a positive value to re-enable the watchdog kill. |
 | `TERMUX_MCP_AUTH_TOKEN` | (none) | Bearer token for authentication |
 | `TERMUX_MCP_MAX_OUTPUT` | `20000` | Max streamed output bytes per command. Output beyond this is drained (process keeps running) but not sent; a truncation marker is appended. Keeps LLM tool results small and token-efficient. |
 
