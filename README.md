@@ -40,6 +40,7 @@ curl -X POST http://localhost:8080/run -H "Content-Type: application/json" -d '{
 | `TERMUX_MCP_HOST` | `127.0.0.1` | Bind address. Use `127.0.0.1` for local-only. |
 | `TERMUX_MCP_TIMEOUT` | `120` | Command timeout in seconds |
 | `TERMUX_MCP_AUTH_TOKEN` | (none) | Bearer token for authentication |
+| `TERMUX_MCP_MAX_OUTPUT` | `20000` | Max streamed output bytes per command. Output beyond this is drained (process keeps running) but not sent; a truncation marker is appended. Keeps LLM tool results small and token-efficient. |
 
 Set `TERMUX_MCP_AUTH_TOKEN` to a value 16+ characters long to require authentication on all endpoints. When binding to a non-loopback address, authentication is mandatory.
 
@@ -198,6 +199,8 @@ Set `TERMUX_MCP_AUTH_TOKEN` to a value 16+ characters long to require authentica
 | Endpoint | Method | Parameters | Description |
 |---|---|---|---|
 | `/ping` | GET | | Health check |
+| `/tools` | GET | | Full OpenAI-format tool schemas for all tools (function-calling ready) |
+| `/catalog` | GET | | Compact tool catalog: `{name, desc, params, category}` per tool — small enough to embed in an LLM system prompt or a `use_tool` meta-tool |
 | `/env` | GET | | Environment info (cwd, home, pid) |
 | `/explain` | POST | `cmd` | Explain what a shell command does |
 | `/telephony-deviceinfo` | POST | | Device telephony info |
@@ -217,9 +220,10 @@ For long-running commands, a watchdog thread enforces the timeout. Package insta
 - All commands are checked against a risk assessment system. Dangerous patterns (like `rm -rf /` or writes to `/dev/`) are blocked.
 - Paths targeting `/dev/`, `/proc/`, or `/sys/` are rejected with canonical path resolution.
 - Numeric parameters are validated before shell interpolation to prevent injection.
-- When `TERMUX_MCP_AUTH_TOKEN` is set, all POST endpoints require a Bearer token.
+- When `TERMUX_MCP_AUTH_TOKEN` is set, all POST endpoints **and the WebSocket endpoint** require a Bearer token. WebSocket accepts it via the `Authorization` header or `?token=` query parameter (for clients that can't set headers).
 - Non-loopback binding enforces mandatory authentication.
 - Request body size is capped at 5 MB.
+- Each WebSocket connection keeps its own `cd` state (previously a shared global); HTTP keeps per-thread state.
 
 
 ## License

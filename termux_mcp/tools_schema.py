@@ -463,4 +463,368 @@ OPENAI_TOOLS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "cancel",
+            "description": "Cancel the currently running command.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "camera",
+            "description": "Take a photo with the device camera.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "camera_id": {"type": "integer", "description": "Camera ID (0=back, 1=front)", "default": 0},
+                    "output": {"type": "string", "description": "Output file path", "default": "/sdcard/DCIM/termux_photo.jpg"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "clipboard_get",
+            "description": "Read the current clipboard content.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "clipboard_set",
+            "description": "Set the clipboard content.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Text to copy to clipboard"}
+                },
+                "required": ["text"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "toast",
+            "description": "Show a brief Android toast message.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Toast message text"}
+                },
+                "required": ["text"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "share",
+            "description": "Share text or a file via the Android share sheet.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Text to share"},
+                    "file": {"type": "string", "description": "File path to share"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "sms",
+            "description": "Send an SMS message (alias of sms_send).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "number": {"type": "string", "description": "Phone number"},
+                    "text": {"type": "string", "description": "Message text"}
+                },
+                "required": ["number", "text"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "tts",
+            "description": "Speak text aloud via text-to-speech (alias of tts_speak).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Text to speak"}
+                },
+                "required": ["text"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "wifi",
+            "description": "Get WiFi connection details (alias of wifi_info).",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "diagnose",
+            "description": "Diagnose missing tools or environment issues (python, git, storage).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "intent": {"type": "string", "enum": ["python", "git", "storage", "all"], "default": "all"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "optimize",
+            "description": "Show performance overview: memory, disk, top processes.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ocr",
+            "description": "Extract text from an image using tesseract.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "input": {"type": "string", "description": "Image file path"}
+                },
+                "required": ["input"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_pr",
+            "description": "GitHub PR operations: list, view, diff, merge, approve, create, status.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["list", "status", "view", "diff", "merge", "approve", "create"]},
+                    "repo": {"type": "string", "description": "GitHub repo (owner/name)"},
+                    "number": {"type": "string", "description": "PR number"},
+                    "state": {"type": "string", "description": "PR state filter", "default": "open"},
+                    "limit": {"type": "integer", "description": "Max PRs", "default": 10},
+                    "title": {"type": "string", "description": "PR title for create"},
+                    "body": {"type": "string", "description": "PR body for create"},
+                    "base": {"type": "string", "description": "Base branch", "default": "main"},
+                    "method": {"type": "string", "description": "Merge method", "default": "merge"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recipe_list",
+            "description": "List saved task recipes.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recipe_run",
+            "description": "Run a saved recipe by id.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "recipe": {"type": "string", "description": "Recipe id"}
+                },
+                "required": ["recipe"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recipe_save",
+            "description": "Save a multi-step task as a reusable recipe.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "recipe": {"type": "string", "description": "Recipe id"},
+                    "name": {"type": "string", "description": "Display name"},
+                    "desc": {"type": "string", "description": "Description"},
+                    "steps": {"type": "array", "items": {"type": "string"}, "description": "Shell commands"}
+                },
+                "required": ["recipe", "name", "steps"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "context",
+            "description": "Read the saved environment context.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "context_save",
+            "description": "Snapshot environment context (hostname, packages, disk, cwd).",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "session_start",
+            "description": "Start a persistent tmux session for stateful commands.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Session name", "default": "termux-mcp"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "session_run",
+            "description": "Run a command inside a persistent tmux session and stream its output.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "cmd": {"type": "string", "description": "Command to run"},
+                    "session": {"type": "string", "description": "Session name"}
+                },
+                "required": ["cmd"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "session_list",
+            "description": "List active tmux sessions.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "session_kill",
+            "description": "Kill a tmux session.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "session": {"type": "string", "description": "Session name"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "history",
+            "description": "List previous task history entries.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "history_save",
+            "description": "Save a task entry to history.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "rawInput": {"type": "string", "description": "Original user input"},
+                    "output": {"type": "string", "description": "Task output"},
+                    "success": {"type": "boolean", "description": "Whether task succeeded"},
+                    "ranCommand": {"type": "string", "description": "Command that ran"},
+                    "traces": {"type": "array", "description": "Agent trace steps"}
+                },
+                "required": ["rawInput", "output"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "history_clear",
+            "description": "Clear all task history.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
 ]
+
+# ── Tool categories (used by the /catalog endpoint) ──────────────────────
+
+TOOL_CATEGORIES = {
+    "run": "shell", "ls": "shell", "read": "shell", "write": "shell",
+    "mkdir": "shell", "delete": "shell", "search": "shell", "cancel": "shell",
+    "screenshot": "device", "camera": "device", "camera_photo": "device",
+    "battery": "device", "location": "device", "wifi": "device",
+    "wifi_info": "device", "clipboard_get": "device", "clipboard_set": "device",
+    "notify": "communicate", "sms": "communicate", "sms_send": "communicate",
+    "sms_inbox": "communicate", "tts": "communicate", "tts_speak": "communicate",
+    "toast": "communicate", "share": "communicate", "call": "communicate",
+    "contacts": "communicate",
+    "smart_install": "smart", "diagnose": "smart", "optimize": "smart",
+    "download": "network", "public_ip": "network", "weather": "network",
+    "speedtest": "network", "open_url": "network",
+    "qrcode": "media", "image_process": "media", "ocr": "media",
+    "system_info": "monitor", "process_list": "monitor",
+    "process_kill": "monitor", "health": "monitor",
+    "cron_add": "cron", "cron_list": "cron", "cron_remove": "cron",
+    "backup": "backup", "restore": "backup", "cloud_sync": "backup",
+    "git_pr": "git", "diff": "git",
+    "recipe_list": "recipes", "recipe_run": "recipes", "recipe_save": "recipes",
+    "context": "context", "context_save": "context",
+    "session_start": "session", "session_run": "session",
+    "session_list": "session", "session_kill": "session",
+    "history": "history", "history_save": "history", "history_clear": "history",
+}
+
+
+def build_catalog() -> list:
+    """Compact per-tool catalog for LLM meta-tool routing.
+
+    Each entry: {name, desc, params, category} where `params` is a short
+    "key:type, key2:type" summary — small enough to embed in a system prompt
+    or a use_tool meta-tool description without blowing the token budget.
+    """
+    catalog = []
+    for entry in OPENAI_TOOLS:
+        fn = entry.get("function", {})
+        name = fn.get("name", "")
+        props = (fn.get("parameters") or {}).get("properties", {})
+        param_summary = ", ".join(
+            f"{k}:{_type_label(v)}" for k, v in props.items()
+        )
+        catalog.append({
+            "name": name,
+            "desc": fn.get("description", ""),
+            "params": param_summary,
+            "category": TOOL_CATEGORIES.get(name, "other"),
+        })
+    return catalog
+
+
+def _type_label(spec: dict) -> str:
+    t = spec.get("type", "str")
+    enum = spec.get("enum")
+    if enum:
+        return "|".join(enum)
+    return "int" if t == "integer" else "bool" if t == "boolean" else "str"

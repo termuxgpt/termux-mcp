@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import hmac
 import json
 import os
 import signal
@@ -8,8 +9,9 @@ import subprocess
 import threading
 import time
 from typing import Optional
+from urllib.parse import parse_qs, urlparse
 
-from .config import AUTO_INPUT_INTERVAL, COMMAND_TIMEOUT, HOME
+from .config import AUTH_TOKEN, AUTO_INPUT_INTERVAL, COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES, REQUIRE_AUTH
 from .utils import is_install_command, shell_quote, is_safe_path, encode_base64
 
 WS_MAGIC = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -18,19 +20,46 @@ OP_CLOSE = 0x8
 OP_PING = 0x9
 OP_PONG = 0xA
 
-_current_dir = os.getcwd()
 _active_pid: Optional[int] = None
 _pid_lock = threading.Lock()
 _ws_session = {"name": None, "created": False}
 
+# Per-connection state lives in a dict created in ws_handler and threaded
+# through the executor — no shared globals (each WS connection gets its own
+# cwd, mirroring the per-thread fix in shell.py for HTTP).
+TRUNCATION_MARKER = f"\n[Output truncated: max {MAX_OUTPUT_BYTES} bytes — full output not sent]\n"
 
-def set_cwd(path: str) -> None:
-    global _current_dir
-    _current_dir = path
+
+def _ws_authenticated(headers: str, path: str = "") -> bool:
+    """Check Bearer token (header or ?token= query) when auth is required."""
+    if not REQUIRE_AUTH:
+        return True
+    # Header: Authorization: Bearer <token>
+    for line in headers.split("\r\n"):
+        if line.lower().startswith("authorization:"):
+            parts = line.split(":", 1)[1].strip().split(None, 1)
+            if len(parts) == 2 and parts[0].lower() == "bearer":
+                return hmac.compare_digest(parts[1], AUTH_TOKEN)
+    # Query: ?token=<token> (needed by clients that can't set headers on WS)
+    try:
+        q = parse_qs(urlparse(path).query)
+        if q.get("token") and hmac.compare_digest(q["token"][0], AUTH_TOKEN):
+            return True
+    except Exception:
+        pass
+    return False
 
 
-def get_cwd() -> str:
-    return _current_dir
+def _send_ws_auth_denied(sock) -> None:
+    body = b'{"error": "Unauthorized"}'
+    head = (
+        "HTTP/1.1 401 Unauthorized\r\n"
+        "Content-Type: application/json\r\n"
+        "WWW-Authenticate: Bearer\r\n"
+        "Connection: close\r\n"
+        f"Content-Length: {len(body)}\r\n\r\n"
+    )
+    sock.sendall(head.encode() + body)
 
 
 def _make_frame(payload: bytes, opcode: int = OP_TEXT) -> bytes:
@@ -83,7 +112,7 @@ def _do_handshake(sock, headers: str) -> bool:
     return False
 
 
-def handle_cd(raw_cmd: str) -> tuple:
+def handle_cd(raw_cmd: str, conn: dict) -> tuple:
     rest = raw_cmd[2:].strip()
     path_part = rest
     for sep in (";", "&&"):
@@ -92,15 +121,15 @@ def handle_cd(raw_cmd: str) -> tuple:
             path_part = rest[:idx].strip()
             break
     if not path_part or path_part == "~":
-        set_cwd(HOME)
+        conn["cwd"] = HOME
         return True, HOME
     raw_path = path_part.strip().replace("~", HOME, 1)
     new_path = os.path.abspath(
-        raw_path if os.path.isabs(raw_path) else os.path.join(get_cwd(), raw_path)
+        raw_path if os.path.isabs(raw_path) else os.path.join(conn["cwd"], raw_path)
     )
     if os.path.isdir(new_path):
-        set_cwd(new_path)
-        return True, get_cwd()
+        conn["cwd"] = new_path
+        return True, conn["cwd"]
     return False, f"Directory not found: {new_path}"
 
 
@@ -125,13 +154,13 @@ def _spawn_auto_input(process: subprocess.Popen, cmd: str) -> None:
 
 # ── WebSocket tool executor ───────────────────────────────────────────────────
 
-def _ws_run_process(sock, raw_cmd: str) -> None:
+def _ws_run_process(sock, raw_cmd: str, conn: dict) -> None:
     """Execute a command and stream output back via WebSocket frames."""
     global _active_pid
     raw_cmd = raw_cmd.strip()
 
     if raw_cmd.startswith("cd"):
-        ok, msg = handle_cd(raw_cmd)
+        ok, msg = handle_cd(raw_cmd, conn)
         rest = raw_cmd[2:].strip()
         for sep in (";", "&&"):
             idx = rest.find(sep)
@@ -148,10 +177,12 @@ def _ws_run_process(sock, raw_cmd: str) -> None:
     cmd = f"export DEBIAN_FRONTEND=noninteractive; {raw_cmd}"
     process = None
     killed = threading.Event()
+    sent_bytes = 0
+    truncated = False
 
     try:
         kwargs = dict(shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                      stdin=subprocess.PIPE, text=True, cwd=get_cwd())
+                      stdin=subprocess.PIPE, text=True, cwd=conn["cwd"])
         if hasattr(os, "setsid"):
             kwargs["preexec_fn"] = os.setsid
         process = subprocess.Popen(f"export PAGER=cat; {cmd}", **kwargs)
@@ -177,16 +208,26 @@ def _ws_run_process(sock, raw_cmd: str) -> None:
         watchdog.start()
 
         for line in process.stdout:
-            try:
-                sock.sendall(_make_frame(line.encode()))
-            except Exception:
-                break
             if killed.is_set():
                 try:
                     sock.sendall(_make_frame(f"\nTimed out after {COMMAND_TIMEOUT}s\n".encode()))
                 except Exception:
                     pass
                 break
+            # Output cap: send up to MAX_OUTPUT_BYTES, then drain silently so
+            # the process still finishes naturally (install prompts etc.).
+            sent_bytes += len(line.encode())
+            if sent_bytes <= MAX_OUTPUT_BYTES:
+                try:
+                    sock.sendall(_make_frame(line.encode()))
+                except Exception:
+                    break
+            elif not truncated:
+                truncated = True
+                try:
+                    sock.sendall(_make_frame(TRUNCATION_MARKER.encode()))
+                except Exception:
+                    pass
 
         watchdog.join(timeout=2)
         if not killed.is_set():
@@ -209,12 +250,12 @@ def _ws_send_json(sock, data: dict) -> None:
     sock.sendall(_make_frame(json.dumps(data).encode()))
 
 
-def _ws_execute_tool(sock, tool: str, params: dict) -> None:
+def _ws_execute_tool(sock, tool: str, params: dict, conn: dict) -> None:
     """Execute any tool and stream output via WebSocket."""
     p = params or {}
 
     if tool == "run":
-        _ws_run_process(sock, p.get("cmd", ""))
+        _ws_run_process(sock, p.get("cmd", ""), conn)
         return
 
     # Build and execute command for each tool type
@@ -608,7 +649,7 @@ def _ws_execute_tool(sock, tool: str, params: dict) -> None:
             "packages_count": os.popen("pkg list-installed 2>/dev/null | wc -l").read().strip(),
             "python_version": os.popen("python3 --version 2>/dev/null || echo none").read().strip(),
             "disk_used": os.popen("df -h /data 2>/dev/null | awk 'NR==2{print $3,$4,$5}' || echo unknown").read().strip(),
-            "current_dir": get_cwd(),
+            "current_dir": conn["cwd"],
         }
         try:
             with open(CONTEXT_FILE, "w") as f:
@@ -728,18 +769,24 @@ def _ws_execute_tool(sock, tool: str, params: dict) -> None:
         return
 
     if cmd:
-        _ws_run_process(sock, cmd)
+        _ws_run_process(sock, cmd, conn)
 
 
 # ── WebSocket handler ─────────────────────────────────────────────────────────
 
 
-def ws_handler(sock, raw_headers: str) -> None:
+def ws_handler(sock, raw_headers: str, path: str = "") -> None:
+    if not _ws_authenticated(raw_headers, path):
+        _send_ws_auth_denied(sock)
+        sock.close()
+        return
+
     if not _do_handshake(sock, raw_headers):
         sock.close()
         return
 
-    set_cwd(HOME)
+    # Per-connection state (own cwd per WebSocket connection).
+    conn = {"cwd": HOME}
 
     try:
         while True:
@@ -760,12 +807,12 @@ def ws_handler(sock, raw_headers: str) -> None:
 
                 if tool:
                     # New generic tool routing
-                    _ws_execute_tool(sock, tool, params)
+                    _ws_execute_tool(sock, tool, params, conn)
                 else:
                     # Backward compat: legacy {"cmd": "..."} messages
                     cmd = msg.get("cmd", "")
                     if cmd:
-                        _ws_execute_tool(sock, "run", {"cmd": cmd})
+                        _ws_execute_tool(sock, "run", {"cmd": cmd}, conn)
     except Exception:
         pass
     finally:

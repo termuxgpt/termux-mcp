@@ -30,7 +30,7 @@ from .handlers.history import (
     handle_history_list, handle_history_save, handle_history_clear,
 )
 from .utils import shell_quote, shell_quote_num, is_safe_path, json_response, is_install_command, encode_base64
-from .tools_schema import OPENAI_TOOLS
+from .tools_schema import OPENAI_TOOLS, build_catalog
 from . import websocket as ws
 from .security import get_risk_assessment
 from .shell import (
@@ -118,12 +118,18 @@ class MCPHandler(BaseHTTPRequestHandler):
             json_response(self,200, {"tools": OPENAI_TOOLS})
             return
 
+        if path == "/catalog":
+            json_response(self,200, {"catalog": build_catalog()})
+            return
+
         if path == "/ws":
-            raw_headers = self.headers.as_string(
-                self.headers.keys(), ": ", "\r\n"
-            ) if hasattr(self.headers, 'as_string') else str(self.headers)
+            # Serialize headers manually — Message.as_string() signature is
+            # incompatible across Python versions (crashes on 3.13).
+            raw_headers = "\r\n".join(
+                f"{k}: {self.headers[k]}" for k in self.headers.keys()
+            )
             sock = self.request
-            ws.ws_handler(sock, raw_headers)
+            ws.ws_handler(sock, raw_headers, self.path)
             return
 
         if path == "/history":
