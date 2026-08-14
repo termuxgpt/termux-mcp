@@ -172,6 +172,7 @@ def _run_process(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
     cmd = preprocess(raw_cmd)
     process = None
     killed = threading.Event()
+    watchdog = None
     sent_bytes = 0
     truncated = False
     truncation_marker = (
@@ -198,22 +199,24 @@ def _run_process(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
 
         _spawn_auto_input(process, raw_cmd)
 
-        # Bug 6 fix: enforce timeout during streaming using a watchdog thread
-        def _timeout_watchdog() -> None:
-            try:
-                process.wait(timeout=COMMAND_TIMEOUT)
-            except subprocess.TimeoutExpired:
-                killed.set()
+        # Timeout watchdog — only armed when TERMUX_MCP_TIMEOUT > 0.
+        # Default 0 = commands run until they finish (pkg upgrade etc.).
+        if COMMAND_TIMEOUT > 0:
+            def _timeout_watchdog() -> None:
                 try:
-                    if hasattr(os, "killpg") and hasattr(os, "getpgid"):
-                        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-                        time.sleep(1)
-                    process.kill()
-                except Exception:
-                    process.kill()
+                    process.wait(timeout=COMMAND_TIMEOUT)
+                except subprocess.TimeoutExpired:
+                    killed.set()
+                    try:
+                        if hasattr(os, "killpg") and hasattr(os, "getpgid"):
+                            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                            time.sleep(1)
+                        process.kill()
+                    except Exception:
+                        process.kill()
 
-        watchdog = threading.Thread(target=_timeout_watchdog, daemon=True)
-        watchdog.start()
+            watchdog = threading.Thread(target=_timeout_watchdog, daemon=True)
+            watchdog.start()
 
         # Read stdout line by line (Bug 6: watchdog runs in parallel)
         for line in process.stdout:
@@ -229,7 +232,8 @@ def _run_process(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
                 truncated = True
                 _send_chunk(handler, truncation_marker)
 
-        watchdog.join(timeout=2)
+        if watchdog is not None:
+            watchdog.join(timeout=2)
 
         if not killed.is_set():
             if process.returncode and process.returncode != 0:

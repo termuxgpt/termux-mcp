@@ -5,7 +5,10 @@ HOST: str = os.environ.get("TERMUX_MCP_HOST", "127.0.0.1")
 
 HOME: str = os.environ.get("HOME", "/data/data/com.termux/files/home")
 
-COMMAND_TIMEOUT: int = int(os.environ.get("TERMUX_MCP_TIMEOUT", 120))
+# Command timeout in seconds. 0 (default) = NO timeout — long operations
+# like pkg update/upgrade/install run until they finish. Set a positive
+# value (e.g. 600) to re-enable the watchdog kill.
+COMMAND_TIMEOUT: int = int(os.environ.get("TERMUX_MCP_TIMEOUT", "0"))
 
 # Cap on streamed command output sent to clients. Output beyond this is
 # drained (process keeps running) but discarded, with a truncation marker
