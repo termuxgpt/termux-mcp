@@ -32,6 +32,7 @@ from .handlers.history import (
 from .utils import shell_quote, shell_quote_num, is_safe_path, json_response, is_install_command, encode_base64
 from .tools_schema import OPENAI_TOOLS, build_catalog
 from . import websocket as ws
+from .safety import snapshot_before_write, snapshot_targets_from_command, trash_path
 from .security import get_risk_assessment
 from .shell import (
     cancel_active,
@@ -512,6 +513,16 @@ class MCPHandler(BaseHTTPRequestHandler):
                 })
                 return
 
+        # File safety: shell commands can overwrite real files (redirects,
+        # sed -i, tee, cp/mv, truncate, dd of=...). Snapshot candidates
+        # before running; echo the snapshot paths so the AI can diff/restore.
+        snaps = snapshot_targets_from_command(cmd)
+        if snaps and not cmd.strip().startswith("cd"):
+            hint = "; ".join(f"snapshot: {s}" for s in snaps)
+            cmd = f"echo {shell_quote(hint)}; {cmd}"
+        elif snaps:
+            logger.info("Snapshots taken (cd command, not echoed): %s", snaps)
+
         self._log(f"Executing: {cmd}")
         execute_streaming(self, cmd)
 
@@ -547,13 +558,17 @@ class MCPHandler(BaseHTTPRequestHandler):
         if not is_safe_path(path):
             json_response(self,403, {"error": "Path not allowed"})
             return
+        # Safety: keep the previous version before overwriting. The snapshot
+        # path is echoed to the client so the AI can diff/restore on request.
+        snap = snapshot_before_write(path)
+        snap_hint = f' snapshot: {shell_quote(snap)}' if snap else ''
         # Write via base64 to avoid shell escaping issues entirely
         encoded = base64.b64encode(content.encode()).decode()
         execute_streaming(
             self,
             f'mkdir -p "$(dirname {shell_quote(path)})" 2>/dev/null; '
             f'echo {shell_quote(encoded)} | base64 -d > {shell_quote(path)} && '
-            f'echo Written: {shell_quote(path)}'
+            f'echo Written: {shell_quote(path)}{snap_hint}'
         )
 
     def _handle_mkdir(self, data: dict) -> None:
@@ -585,8 +600,12 @@ class MCPHandler(BaseHTTPRequestHandler):
         if not is_safe_path(path):
             json_response(self,403, {"error": "Path not allowed"})
             return
-        flags = "-rf" if recursive else ""
-        execute_streaming(self, f'rm {flags} {shell_quote(path)} 2>/dev/null && echo Deleted: {shell_quote(path)} || echo Failed to delete: {shell_quote(path)}')
+        # Safety: move to trash instead of destroying — recoverable.
+        trashed = trash_path(path)
+        if trashed:
+            execute_streaming(self, f'echo Moved to trash: {shell_quote(trashed)}')
+        else:
+            execute_streaming(self, f'echo Failed to move: {shell_quote(path)}')
 
     def _handle_search(self, data: dict) -> None:
         path = (data.get("path") or ".").strip()

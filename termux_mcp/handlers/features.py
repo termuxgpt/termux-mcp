@@ -2,6 +2,7 @@ import os
 import time
 from typing import TYPE_CHECKING
 
+from ..safety import snapshot_before_write
 from ..shell import execute_streaming, get_current_dir
 from ..utils import shell_quote, is_safe_path, json_response
 
@@ -138,7 +139,11 @@ def handle_patch(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     safe_file = shell_quote(target)
     encoded = base64.b64encode(patch_content.encode()).decode()
 
-    cmd = (
+    # Safety: keep the pre-patch version before the file is modified.
+    snap = snapshot_before_write(target)
+    prefix = f"echo {shell_quote(f'[snapshot: {snap}]')}; " if snap else ""
+
+    cmd = prefix + (
         f'echo {shell_quote(encoded)} | base64 -d > /tmp/_mcp_patch.diff && '
         f'patch {safe_file} /tmp/_mcp_patch.diff 2>&1 && '
         f'echo "Patch applied to {target}" || '
