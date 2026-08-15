@@ -1,5 +1,5 @@
 import re
-from typing import Tuple, Optional
+from typing import Tuple
 
 class CommandRiskLevel:
     SAFE = "safe"
@@ -40,6 +40,9 @@ WARNING_PATTERNS = [
     r'chmod\s+-R',                           # Recursive chmod
     r'find\s+.*-delete',                     # Find + delete
     r'>\s*/(?:bin|boot|etc|lib|opt|root|sbin|srv|sys|usr|var)(?:/|\s)',  # Redirect to system dirs
+    r'pkg\s+(?:uninstall|remove)\b',         # Removing packages — confirm first
+    r'apt(?:-get)?\s+(?:remove|purge)\b',    # apt removals
+    r'pip\s+(?:uninstall|remove)\b',         # pip removals
 ]
 
 def is_dangerous_command(cmd: str) -> Tuple[bool, str, str]:
