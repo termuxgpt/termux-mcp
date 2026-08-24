@@ -32,6 +32,9 @@ curl http://localhost:8080/ping
 curl -X POST http://localhost:8080/run -H "Content-Type: application/json" -d '{"cmd": "ls ~"}'
 ```
 
+## Termux Tutorial Apps (AD)
+<center><a href="https://bit.ly/termuxtoolbox"><img src="https://raw.githubusercontent.com/Bhai4You/bhai4you/refs/heads/master/termux_toolbox_app_banner.png" alt="Termux Toolbox"  ></a></br><a href="https://play.google.com/store/apps/details?id=com.codeninja.termuxbannerx"> <img src="https://raw.githubusercontent.com/Bhai4You/bhai4you/refs/heads/master/termux-bannerx.png" alt="Termux BannerX"  ></a> <a href="https://play.google.com/store/apps/details?id=com.codeninja.termuxtutor"><img src="https://raw.githubusercontent.com/Bhai4You/bhai4you/refs/heads/master/termux-tutor.png" alt="Termux Tutor"  ></a></center></br>
+
 ## Configuration
 
 | Variable | Default | Description |
