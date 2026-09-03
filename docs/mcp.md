@@ -7,8 +7,8 @@ transports that MCP clients understand:
 
 * **Streamable HTTP** (default) — for [RikkaHub](https://rikkahub.me) and
   any network MCP client.
-* **stdio** — for desktop AI apps (Claude Desktop, Cursor, ...) that spawn
-  a command, usually over `ssh android`.
+* **stdio** — for desktop AI apps (Cursor, ...) that spawn a command,
+  usually over `ssh android`.
 
 Both commands are installed by the same `pkg install termux-mcp`. They are
 **independent processes** — running `termux-native-mcp` never touches the
@@ -44,7 +44,7 @@ RikkaHub → Add MCP server:
 (the `Authorization` header is only needed once you set a token — see
 below).
 
-## Quick start (Claude Desktop, from a computer)
+## Quick start (desktop client, from a computer)
 
 On the phone, make sure `sshd` runs (`pkg install openssh`). Then in the
 desktop client's MCP config:

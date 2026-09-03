@@ -85,7 +85,7 @@ MCP must adopt the WS model (§4.3) — which also makes MCP strictly better tha
 - stdio transport: messages are **newline-delimited JSON-RPC** on stdin/stdout; stderr for logs; nothing but MCP messages on stdout.
 - Streamable HTTP: **one endpoint** (e.g. `/mcp`) serving POST (client→server; may reply `application/json` or open an SSE stream via `Accept: text/event-stream`) and GET (server→client SSE stream). `Mcp-Session-Id` header issued at initialize; `MCP-Protocol-Version` header honored (absent ⇒ assume 2025-03-26). Origin validation is a spec **MUST** (DNS rebinding); loopback binding + auth recommended.
 - Lifecycle: `initialize` (version negotiation, capabilities) → client `notifications/initialized` → `tools/list` / `tools/call`; JSON-RPC errors −32700/−32600/−32601/−32602/−32603; `ping`; tool execution failures are `isError: true` results, not JSON-RPC errors.
-- RikkaHub (the client named in the issue): network transports only (SSE + Streamable HTTP), Bearer via `headers: [["Authorization","Bearer …"]]`, per-tool approval toggles. **Stdio is irrelevant for RikkaHub** — HTTP transport is the primary deliverable; stdio is a bonus for desktop clients (Claude Desktop via SSH/ADB port-forward).
+- RikkaHub (the client named in the issue): network transports only (SSE + Streamable HTTP), Bearer via `headers: [["Authorization","Bearer …"]]`, per-tool approval toggles. **Stdio is irrelevant for RikkaHub** — HTTP transport is the primary deliverable; stdio is a bonus for desktop clients via SSH/ADB port-forward.
 
 ---
 
@@ -104,7 +104,7 @@ MCP must adopt the WS model (§4.3) — which also makes MCP strictly better tha
 | Transport | Endpoint/IO | Purpose |
 |---|---|---|
 | Streamable HTTP (2025-06-18) | `POST/GET http://127.0.0.1:8081/mcp` | **Primary** — RikkaHub & any network MCP client. SSE streams for long `tools/call`. |
-| stdio | stdin/stdout, NDJSON | Desktop AI apps (Claude Desktop, Cursor…) that spawn `termux-native-mcp --stdio` via ADB/SSH `-R`. |
+| stdio | stdin/stdout, NDJSON | Desktop AI apps that spawn `termux-native-mcp --stdio` via ADB/SSH `-R`. |
 
 - Old 2024-11-05 HTTP+SSE (`/sse` + `/messages`) is **not** needed: RikkaHub supports Streamable HTTP directly (per its docs, streamable is "the newer, recommended transport"); if a legacy client shows up, that transport is ~80 extra lines behind the same dispatcher — defer.
 - **Command naming** (settled): the REST server keeps `termux-mcp` exactly as today. The native MCP server is a *separate binary* `termux-native-mcp` (same package, new console-script entry): bare invocation = Streamable HTTP on `127.0.0.1:8081`; `--stdio` = stdio mode; `--port N` overrides the port. REST's `termux-mcp` startup log prints one hint line — `Native MCP server: run 'termux-native-mcp'` (a log string; no behavior change).
@@ -207,7 +207,7 @@ Freeze `main` at v0.9.0; note SHA `dd812fe`. All work on `feature/mcp`.
 | `termux_mcp/mcp_server.py` | `run_http()`, `run_stdio()` (and optional later `run_dual()`); reuse `server.py` guard logic patterns (auth length check, loopback rule) by **importing** from `.config`/`.security` only | ~80 |
 | `termux_mcp/mcp_main.py` | CLI entry: `argparse` for `--stdio` / `--port`, env dispatch → `run_http()` / `run_stdio()`; the `termux-native-mcp` console-script target | ~40 |
 | `tests/test_mcp_bridge.py`, `tests/test_mcp_core.py`, `tests/test_mcp_http.py` | stdlib `unittest` — 51 tests: dechunk/marker decoding, registry integrity, schema validation, risk gates (no execution), session TTL, stdio loop, live HTTP transport (ephemeral port) | ~614 |
-| `docs/mcp.md` | user-facing: RikkaHub config JSON, curl smoke tests, Claude Desktop stdio sample, env table | ~120 |
+| `docs/mcp.md` | user-facing: RikkaHub config JSON, curl smoke tests, desktop-client stdio sample, env table | ~120 |
 
 ### Phase 2 — additive packaging (the only edits, and they're opt-in)
 
@@ -281,7 +281,7 @@ Freeze `main` at v0.9.0; note SHA `dd812fe`. All work on `feature/mcp`.
 }
 ```
 
-Claude Desktop (desktop, via ADB/SSH):
+Desktop MCP client (via ADB/SSH):
 ```json
 { "mcpServers": { "termux": { "command": "ssh", "args": ["android", "termux-native-mcp", "--stdio"] } } }
 ```
