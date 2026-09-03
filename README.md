@@ -10,10 +10,10 @@ AI Agent --> POST /run {"cmd": "ls -la"} --> Termux-MCP --> Termux Shell
 
 ## Two commands — which do I run?
 
-| Command | What it is | When to use it |
-|---|---|---|
-| `termux-mcp` | REST API daemon on `:8080` (this README's endpoints) | Your existing scripts, apps and the Flutter app |
-| `termux-native-mcp` | **Native MCP server** (Model Context Protocol, spec 2025-06-18) | MCP clients: RikkaHub, desktop AI apps (Cursor, ...) |
+| Command | What it is |
+|---|---|
+| `termux-mcp` | REST API daemon on `:8080` (this README's endpoints) |
+| `termux-native-mcp` | **Native MCP server** (Model Context Protocol, spec 2025-06-18) for MCP clients: RikkaHub, desktop AI apps (Cursor, ...) |
 
 Both install together via `pkg install termux-mcp` and run as **separate
 processes** — starting `termux-native-mcp` never touches the REST daemon's
