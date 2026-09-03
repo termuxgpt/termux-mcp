@@ -14,7 +14,7 @@ def main(argv=None) -> None:
     parser.add_argument(
         "--stdio", action="store_true",
         help="Speak MCP over stdin/stdout instead of HTTP "
-             "(for Claude Desktop / Cursor via ssh).")
+             "(for desktop MCP clients via ssh).")
     parser.add_argument(
         "--port", type=int, default=None,
         help="HTTP listen port (default: $TERMUX_NATIVE_MCP_PORT or 8081).")
