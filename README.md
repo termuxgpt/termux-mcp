@@ -8,6 +8,43 @@ AI Agent --> POST /run {"cmd": "ls -la"} --> Termux-MCP --> Termux Shell
                       <-- chunked streaming output -+
 ```
 
+## Two commands — which do I run?
+
+| Command | What it is | When to use it |
+|---|---|---|
+| `termux-mcp` | REST API daemon on `:8080` (this README's endpoints) | Your existing scripts, apps and the Flutter app |
+| `termux-native-mcp` | **Native MCP server** (Model Context Protocol, spec 2025-06-18) | MCP clients: RikkaHub, desktop AI apps (Cursor, ...) |
+
+Both install together via `pkg install termux-mcp` and run as **separate
+processes** — starting `termux-native-mcp` never touches the REST daemon's
+port, state or behavior.
+
+```
+termux-mcp                  # REST API on 127.0.0.1:8080
+termux-native-mcp           # native MCP, Streamable HTTP on 127.0.0.1:8081
+termux-native-mcp --stdio   # native MCP over stdin/stdout (desktop clients)
+```
+
+RikkaHub (same phone):
+
+```json
+{
+  "type": "http",
+  "url": "http://127.0.0.1:8081/mcp",
+  "commonOptions": {
+    "name": "Termux",
+    "enable": true,
+    "headers": [["Authorization", "Bearer <TERMUX_MCP_AUTH_TOKEN>"]]
+  }
+}
+```
+
+Desktop MCP client (over ssh): `{"command": "ssh", "args": ["android", "termux-native-mcp", "--stdio"]}`
+
+Full guide, env vars and tool list: **[docs/mcp.md](docs/mcp.md)**.
+Both servers share the same safety system (risk gates, file snapshots,
+trash) because they run the same handler code.
+
 ## Installation
 
 ```bash
