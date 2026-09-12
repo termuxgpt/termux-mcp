@@ -235,6 +235,25 @@ def _run_process(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
         if watchdog is not None:
             watchdog.join(timeout=2)
 
+        # Reap the child so returncode is actually populated before we read it.
+        #
+        # Draining stdout to EOF does NOT set returncode — only wait()/poll() do
+        # — and nothing else calls either for an ordinary command: the watchdog
+        # above arms only when COMMAND_TIMEOUT > 0 (default 0), and the
+        # auto-input thread polls only for install commands. Without this,
+        # returncode stayed None, `if process.returncode and ...` was falsy, and
+        # EVERY command reported "✅ Done" — including `false`, `exit 7` and a
+        # missing binary. Verified against a real shell.
+        #
+        # wait(), not poll(): immediately after EOF, poll() still loses the race
+        # with the kernel reaping the child and returns None. Bounded, so a
+        # command that closed stdout but lives on cannot hold the response open
+        # — it just falls back to the old behaviour instead of hanging.
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+
         if not killed.is_set():
             if process.returncode and process.returncode != 0:
                 _send_chunk(handler, f"\n❌ Exit code: {process.returncode}\n")
