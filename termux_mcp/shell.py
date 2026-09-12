@@ -37,17 +37,77 @@ def get_active_pid() -> Optional[int]:
         return tld.active_pid
 
 
+# ── Cancellation registry (process-wide, deliberately NOT thread-local) ────
+#
+# `threading.local()` above cannot serve cancellation. ThreadingHTTPServer
+# handles every request on its own thread, so a `/cancel` request read
+# `active_pid` from a thread that had never run a command, got `None`, and
+# killed nothing — `/cancel` could never work over HTTP, which is the only
+# transport the REST API has.
+#
+# So the running pids live here, shared across threads. The per-thread
+# `active_pid` above is kept as-is for `/env`'s `active_command_pid` report.
+_active_pids: set = set()
+_active_pids_lock = threading.Lock()
+
+# How long a stopped command gets to exit on SIGTERM before SIGKILL.
+CANCEL_GRACE = 0.4
+
+
+def register_active_pid(pid: int) -> None:
+    with _active_pids_lock:
+        _active_pids.add(pid)
+
+
+def unregister_active_pid(pid: int) -> None:
+    with _active_pids_lock:
+        _active_pids.discard(pid)
+
+
+def active_pids() -> list:
+    with _active_pids_lock:
+        return sorted(_active_pids)
+
+
 def cancel_active() -> bool:
-    tld = _get_tld()
-    with tld.pid_lock:
-        pid = tld.active_pid
-    if pid is None:
+    """Stop every running command. True if anything was signalled.
+
+    Signals the **process group**, not just the pid: the daemon starts each
+    command with `setsid`, so a command's pid is also its group id, and
+    signalling the group reaches the command's children rather than orphaning
+    them (an `sh -c 'ffmpeg ...'` would otherwise leave ffmpeg running).
+    """
+    pids = active_pids()
+    if not pids:
         return False
-    try:
-        os.kill(pid, signal.SIGTERM)
-        return True
-    except ProcessLookupError:
-        return False
+
+    def signal_group(pid: int, sig: int) -> bool:
+        try:
+            if hasattr(os, "killpg"):
+                os.killpg(pid, sig)
+            else:
+                os.kill(pid, sig)
+            return True
+        except (ProcessLookupError, PermissionError):
+            return False
+
+    killed = False
+    for pid in pids:
+        if signal_group(pid, signal.SIGTERM):
+            killed = True
+
+    # Give well-behaved commands a moment to exit, then force the rest. Bounded,
+    # so /cancel cannot hang the client that asked for it.
+    if killed:
+        time.sleep(CANCEL_GRACE)
+        # SIGKILL is Unix-only; falling back to SIGTERM keeps this importable
+        # and callable on a platform that lacks it rather than raising inside
+        # the cancellation path.
+        force = getattr(signal, "SIGKILL", signal.SIGTERM)
+        for pid in active_pids():
+            signal_group(pid, force)
+
+    return killed
 
 
 def _inject_noninteractive(cmd: str) -> str:
@@ -196,6 +256,8 @@ def _run_process(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
 
         with tld.pid_lock:
             tld.active_pid = process.pid
+        # Also into the process-wide registry, which is what /cancel reads.
+        register_active_pid(process.pid)
 
         _spawn_auto_input(process, raw_cmd)
 
@@ -265,4 +327,6 @@ def _run_process(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
     finally:
         with tld.pid_lock:
             tld.active_pid = None
+        if process is not None:
+            unregister_active_pid(process.pid)
         _finalize_chunks(handler)
