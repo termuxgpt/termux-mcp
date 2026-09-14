@@ -6,7 +6,8 @@ import time
 from typing import TYPE_CHECKING, Optional
 
 from .config import AUTO_INPUT_INTERVAL, COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES
-from .utils import is_install_command, kill_process_group
+from .security import get_risk_assessment
+from .utils import is_install_command, json_response, kill_process_group
 
 if TYPE_CHECKING:
     from http.server import BaseHTTPRequestHandler
@@ -193,6 +194,27 @@ def _spawn_auto_input(process: subprocess.Popen, cmd: str) -> None:
 
 def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
     raw_cmd = raw_cmd.strip()
+
+    # Every shell-backed endpoint funnels through here, so this is the one
+    # place the check cannot be forgotten. It was previously called from just
+    # two handlers — /run and the MCP run tool — leaving ~120 endpoints
+    # ungated, including /write, /delete, /patch, /cron-add, /service-guard
+    # and /ssh-wizard.
+    #
+    # This covers the DANGEROUS tier only. Those commands have no legitimate
+    # use from any endpoint and no handler constructs one. The WARNING tier
+    # is left where it is, on /run, which already knows how to hand the caller
+    # the confirmation payload and accept `confirmed: true` on the retry —
+    # adding that requirement to every endpoint in this change would turn
+    # working calls into confirmation prompts.
+    risk = get_risk_assessment(raw_cmd)
+    if risk["blocked"]:
+        json_response(handler, 403, {
+            "error": risk["message"],
+            "risk_level": risk["risk_level"],
+            "blocked": True,
+        })
+        return
 
     if raw_cmd.startswith("cd"):
         ok, msg = handle_cd(raw_cmd)

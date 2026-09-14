@@ -14,6 +14,7 @@ No command is ever executed: the executor is stubbed in every module that
 binds it.
 """
 
+import io
 import os
 import sys
 import unittest
@@ -171,6 +172,83 @@ class HandlerValidationTests(unittest.TestCase):
     def test_json_response_is_imported_everywhere_it_is_used(self):
         for mod in (terminal, ai_power, features):
             self.assertTrue(hasattr(mod, "json_response"), mod.__name__)
+
+
+class RiskGateCoverageTests(unittest.TestCase):
+    """The risk gate must apply to every endpoint, not only /run.
+
+    get_risk_assessment was called from exactly two places — the /run handler
+    and the MCP run tool — so roughly 120 endpoints bypassed it, including
+    /write, /delete, /patch, /cron-add, /service-guard and /ssh-wizard.
+    Funnelling the check through execute_streaming is what closes that.
+    """
+
+    @staticmethod
+    def _handler():
+        class _W:
+            def __init__(self):
+                self.buf = io.BytesIO()
+
+            def write(self, b):
+                self.buf.write(b)
+
+        class Fake:
+            def __init__(self):
+                self.status = None
+                self._w = _W()
+
+            def send_response(self, status, *a):
+                self.status = status
+
+            def send_header(self, *a):
+                pass
+
+            def end_headers(self):
+                pass
+
+            @property
+            def wfile(self):
+                return self._w
+
+        return Fake()
+
+    def test_dangerous_commands_blocked_centrally(self):
+        executed = []
+        with mock.patch.object(shell_mod, "_run_process",
+                               lambda h, c: executed.append(c)):
+            for cmd in ("rm -rf /", "chmod -R 777 /", "mkfs.ext4 /dev/block/x"):
+                h = self._handler()
+                shell_mod.execute_streaming(h, cmd)
+                self.assertEqual(h.status, 403, f"{cmd} was not blocked")
+        self.assertEqual(executed, [], "a blocked command still executed")
+
+    def test_safe_command_still_runs(self):
+        executed = []
+        with mock.patch.object(shell_mod, "_run_process",
+                               lambda h, c: executed.append(c)):
+            h = self._handler()
+            shell_mod.execute_streaming(h, "echo hi")
+            self.assertEqual(h.status, 200)
+        self.assertEqual(executed, ["echo hi"])
+
+    def test_previously_dead_patterns_now_fire(self):
+        # These patterns are written with uppercase flags, but the command is
+        # lowercased before matching — so case-sensitive matching meant they
+        # could never fire and `chmod -R 777 /` reported SAFE.
+        from termux_mcp.security import get_risk_assessment
+
+        for cmd in ("chmod -R 777 /", "chmod -R 000 /x", "chown -R root /x"):
+            self.assertTrue(get_risk_assessment(cmd)["blocked"], cmd)
+
+    def test_origin_check_rejects_rebinding(self):
+        from termux_mcp.mcp_transport_http import _origin_allowed
+
+        # No Origin: the app, curl and stdio clients send none.
+        self.assertTrue(_origin_allowed("127.0.0.1", ""))
+        # A page resolving its own host to loopback sends Host: 127.0.0.1
+        # with the attacker's Origin. This used to be allowed.
+        self.assertFalse(_origin_allowed("127.0.0.1", "https://evil.com"))
+        self.assertFalse(_origin_allowed("evil.com", "https://evil.com"))
 
 
 if __name__ == "__main__":
