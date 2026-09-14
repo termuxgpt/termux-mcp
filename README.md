@@ -47,14 +47,32 @@ trash) because they run the same handler code.
 
 ## Installation
 
+### pip (recommended)
+
+```bash
+pkg update && pkg install python -y
+pip install termux-mcp
+termux-mcp
+```
+
+This installs a global `termux-mcp` command — it runs from any directory, and
+`pip install -U termux-mcp` upgrades it.
+
+### From a clone
+
 ```bash
 pkg update && pkg install python git -y
 git clone https://github.com/termuxgpt/termux-mcp
 cd termux-mcp
-python -m termux_mcp
+pip install .
+termux-mcp
 ```
 
-Or via the package repository:
+`pip install .` registers the command globally, so the `cd` is only needed for
+the install itself. Without it, `python -m termux_mcp` only works from inside
+the clone.
+
+### Package repository
 
 ```bash
 curl -fSL https://termux-mcp.pages.dev/add-repo.sh | bash
