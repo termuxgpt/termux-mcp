@@ -11,7 +11,8 @@ import time
 from urllib.parse import parse_qs, urlparse
 
 from .config import AUTH_TOKEN, AUTO_INPUT_INTERVAL, COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES, REQUIRE_AUTH
-from .utils import (is_install_command, shell_quote, require_int, is_safe_path,
+from .utils import (is_install_command, kill_process_group, shell_quote,
+                    require_int, is_safe_path,
                     encode_base64)
 
 # Values termux-location accepts for -p, per the tool schema.
@@ -100,6 +101,11 @@ def _make_frame(payload: bytes, opcode: int = OP_TEXT) -> bytes:
     return frame + payload
 
 
+# Largest WebSocket frame accepted. Tool parameters are small; this is well
+# above anything legitimate and bounds what a malformed length can allocate.
+MAX_FRAME_BYTES = 8 * 1024 * 1024
+
+
 def _recv_exact(sock, n: int) -> bytes:
     """Read exactly n bytes — sock.recv may return fewer (TCP stream)."""
     chunks = []
@@ -122,6 +128,13 @@ def _read_frame(sock) -> tuple:
         length = struct.unpack(">H", _recv_exact(sock, 2))[0]
     elif length == 127:
         length = struct.unpack(">Q", _recv_exact(sock, 8))[0]
+
+    # The length field is attacker-controlled and was previously used
+    # directly as an allocation size — a frame declaring 2^63 bytes reached
+    # _recv_exact and tried to read it.
+    if length > MAX_FRAME_BYTES:
+        raise ConnectionError(f"frame too large: {length} bytes")
+
     masks = _recv_exact(sock, 4)
     data = bytearray(_recv_exact(sock, length))
     for i in range(length):
@@ -306,6 +319,10 @@ def _ws_run_process(sock, raw_cmd: str, conn: dict) -> str:
         except Exception:
             pass
     finally:
+        # Reap the child on abnormal exit. A client that disconnected
+        # mid-command, or an error in the loop above, used to leave the
+        # process running with nothing tracking it.
+        kill_process_group(process)
         conn["active_pid"] = None
 
     return "".join(collected)

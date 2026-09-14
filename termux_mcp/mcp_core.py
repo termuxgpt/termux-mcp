@@ -14,7 +14,7 @@ from .config import COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES
 from .safety import snapshot_targets_from_command
 from .security import get_risk_assessment
 from .shell import preprocess, set_current_dir
-from .utils import shell_quote
+from .utils import kill_process_group, shell_quote
 from .websocket import _session_capture, _spawn_auto_input
 
 
@@ -334,6 +334,9 @@ def _execute_command(session: MCPSession, raw_cmd: str) -> dict:
     except Exception as e:
         append(f"\n❌ Error: {e}\n")
     finally:
+        # Reap the child if the stream ended without it exiting — a dropped
+        # client or an exception above would otherwise leak a live process.
+        kill_process_group(process)
         session.active_pid = None
 
     meta = mcp_bridge.analyze_output("".join(chunks))

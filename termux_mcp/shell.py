@@ -6,7 +6,7 @@ import time
 from typing import TYPE_CHECKING, Optional
 
 from .config import AUTO_INPUT_INTERVAL, COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES
-from .utils import is_install_command
+from .utils import is_install_command, kill_process_group
 
 if TYPE_CHECKING:
     from http.server import BaseHTTPRequestHandler
@@ -328,5 +328,9 @@ def _run_process(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
         with tld.pid_lock:
             tld.active_pid = None
         if process is not None:
+            # Reap the child. Previously nothing did, so a client that
+            # disconnected mid-command — or any error in the loop above —
+            # leaked a process that ran forever and could not be cancelled.
+            kill_process_group(process)
             unregister_active_pid(process.pid)
         _finalize_chunks(handler)

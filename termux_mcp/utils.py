@@ -96,6 +96,45 @@ def is_safe_path(path: str) -> bool:
     return True
 
 
+def kill_process_group(process) -> None:
+    """Terminate a spawned child and anything it started, if still running.
+
+    Commands are spawned with ``preexec_fn=os.setsid``, so the child is a
+    session leader and its process group id equals its pid — killing the
+    group takes down its descendants too.
+
+    This exists because nothing used to kill the child at all. All three
+    executors cleared their bookkeeping in ``finally`` and left the process
+    running, and because COMMAND_TIMEOUT defaults to 0 the watchdog never
+    armed. A client that disconnected mid-command, or any exception in the
+    streaming loop, therefore left a process running forever — untracked and
+    uncancellable.
+
+    Safe to call on the normal path: an already-reaped process is a no-op.
+    """
+    if process is None:
+        return
+    try:
+        if process.poll() is not None:
+            return
+    except Exception:
+        return
+
+    import signal
+
+    try:
+        if hasattr(os, "killpg") and hasattr(os, "getpgid"):
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+            return
+    except Exception:
+        pass
+
+    try:
+        process.kill()
+    except Exception:
+        pass
+
+
 def is_install_command(cmd: str) -> bool:
     return bool(re.search(
         r'\b(pkg|apt|apt-get)\s+(install|upgrade|dist-upgrade)\b', cmd
