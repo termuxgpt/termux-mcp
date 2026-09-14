@@ -90,7 +90,7 @@ Set `TERMUX_MCP_AUTH_TOKEN` to a value 16+ characters long to require authentica
 
 | Endpoint | Method | Parameters | Description |
 |---|---|---|---|
-| `/run` | POST | `cmd` (string, required) | Execute a shell command with streaming output. Maintains persistent `cd` state across requests. |
+| `/run` | POST | `cmd` (string, required) | Execute a shell command with streaming output. The working directory is process-wide and shared between clients over HTTP — chain `cd x && cmd` for isolation. |
 | `/ls` | POST | `path` (string, default `.`), `detailed` (bool) | List directory contents |
 | `/read` | POST | `path` (string, required) | Read a file (first 500 lines) |
 | `/write` | POST | `path`, `content` | Write content to a file via base64 encoding |
@@ -257,13 +257,36 @@ For long-running commands, a watchdog thread enforces the timeout. Package insta
 
 ## Security
 
-- All commands are checked against a risk assessment system. Dangerous patterns (like `rm -rf /` or writes to `/dev/`) are blocked.
-- Paths targeting `/dev/`, `/proc/`, or `/sys/` are rejected with canonical path resolution.
-- Numeric parameters are validated before shell interpolation to prevent injection.
-- When `TERMUX_MCP_AUTH_TOKEN` is set, all POST endpoints **and the WebSocket endpoint** require a Bearer token. WebSocket accepts it via the `Authorization` header or `?token=` query parameter (for clients that can't set headers).
-- Non-loopback binding enforces mandatory authentication.
-- Request body size is capped at 5 MB.
-- Each WebSocket connection keeps its own `cd` state (previously a shared global); HTTP keeps per-thread state.
+- **Command injection.** Every parameter interpolated into a shell command is
+  quoted with `shell_quote`, and every numeric parameter is validated by
+  `require_number`/`require_int` — a value that is not a number is rejected,
+  not passed through. Parameters embedded in double-quoted `echo` arguments
+  are quoted as whole strings, since double quotes still permit `$(...)`.
+- **Risk gate.** Commands are assessed before execution. The `DANGEROUS` tier
+  (e.g. `rm -rf /`, `mkfs.`, writes to `/dev/`, `chmod -R 777`) is refused on
+  every shell-backed endpoint — the check lives in the shared executor, so a
+  new endpoint cannot forget it. The `WARNING` tier (package removals,
+  recursive deletes) requires an explicit `confirmed: true` on `/run`.
+- **Sensitive writes.** `/write` and `/patch` can edit anything outside
+  `/dev`, `/proc` and `/sys` — that is the point of them — but paths that
+  grant persistence require confirmation: `~/.ssh/`, `~/.bashrc`,
+  `~/.profile`, `~/.termux/` (including `boot/`), and anything under
+  `$PREFIX`. These are an SSH backdoor, code run on shell start, and code run
+  at device boot respectively.
+- **Authentication.** With `TERMUX_MCP_AUTH_TOKEN` set, every endpoint
+  requires a Bearer token — POST, GET (except `/ping`, which the client's
+  connectivity probe needs before it holds a token), and the WebSocket, which
+  accepts the token via the `Authorization` header or a `?token=` query
+  parameter. Non-loopback binding enforces mandatory authentication.
+- **Network.** A request carrying an `Origin` header is rejected unless that
+  origin is allowlisted, so a page open on the device cannot reach the server
+  by resolving its own hostname to loopback. Requests with no `Origin` (the
+  app, `curl`, stdio clients) are unaffected.
+- Request body size is capped at 5 MB; WebSocket frames at 8 MB.
+- Request bodies are not logged — only their size.
+- Each WebSocket connection keeps its own `cd` state. Over HTTP the working
+  directory is **process-wide and shared between clients**, so one caller's
+  `cd` affects the next; chain `cd x && cmd` if you need isolation.
 
 
 ## License

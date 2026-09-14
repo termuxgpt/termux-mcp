@@ -60,9 +60,12 @@ def test_registry_is_visible_from_another_thread():
         proc.kill()
         proc.wait(timeout=5)
 
-    assert seen["local"] is None, (
-        "get_active_pid() is thread-local — if this ever returns a pid from a "
-        "foreign thread the module changed shape, but do NOT rely on it"
+    # get_active_pid() now reads the shared registry, so it reports the
+    # running command from any thread. It previously read a thread-local that
+    # only the running request's thread had written, which meant /env reported
+    # active_command_pid: null no matter what was executing.
+    assert seen["local"] == proc.pid, (
+        "get_active_pid() must report the running command from any thread"
     )
     assert proc.pid in seen["registry"], "the registry must be process-wide"
 
