@@ -3,7 +3,7 @@ OPENAI_TOOLS = [
         "type": "function",
         "function": {
             "name": "run",
-            "description": "Execute a shell command in Termux with real-time streaming output. Maintains persistent cd state.",
+            "description": "Execute a shell command in Termux with real-time streaming output. The working directory persists between calls but is shared across clients over HTTP - chain 'cd x && cmd' if isolation matters.",
             "parameters": {
                 "type": "object",
                 "properties": {

@@ -12,30 +12,36 @@ from .utils import is_install_command, json_response, kill_process_group
 if TYPE_CHECKING:
     from http.server import BaseHTTPRequestHandler
 
-# Per-thread state — fixes Bug 7 (global state race conditions)
-_thread_local = threading.local()
-
-
-def _get_tld() -> threading.local:
-    if not hasattr(_thread_local, 'current_dir'):
-        _thread_local.current_dir = os.getcwd()
-        _thread_local.active_pid = None
-        _thread_local.pid_lock = threading.Lock()
-    return _thread_local
+# ── Working directory ─────────────────────────────────────────────────────
+#
+# Process-wide, NOT thread-local.
+#
+# This was moved into threading.local() to remove a race. But
+# ThreadingHTTPServer handles every request on a *new* thread and reuses
+# none, so `cd` in one request was invisible to the next — the README's
+# "maintains persistent cd state across requests" was untrue for the only
+# transport the REST API has. Every get_current_dir() call returned the
+# daemon's startup directory.
+#
+# The consequence to be aware of: over HTTP the working directory is shared
+# by every client, so one caller's `cd` affects the next. That is now stated
+# in the README rather than contradicted by it. WebSocket connections keep
+# their own cwd in websocket.py and do not come through here.
+#
+# The race the thread-local was meant to fix is real, so this is lock-guarded.
+_cwd_lock = threading.Lock()
+_current_dir: str = os.getcwd()
 
 
 def get_current_dir() -> str:
-    return _get_tld().current_dir
+    with _cwd_lock:
+        return _current_dir
 
 
 def set_current_dir(path: str) -> None:
-    _get_tld().current_dir = path
-
-
-def get_active_pid() -> Optional[int]:
-    tld = _get_tld()
-    with tld.pid_lock:
-        return tld.active_pid
+    global _current_dir
+    with _cwd_lock:
+        _current_dir = path
 
 
 # ── Cancellation registry (process-wide, deliberately NOT thread-local) ────
@@ -63,6 +69,18 @@ def register_active_pid(pid: int) -> None:
 def unregister_active_pid(pid: int) -> None:
     with _active_pids_lock:
         _active_pids.discard(pid)
+
+
+def get_active_pid() -> Optional[int]:
+    """The pid of a command currently running, from the shared registry.
+
+    This previously read a thread-local that only the *running* request's
+    thread had ever written. Since each HTTP request gets its own fresh
+    thread, it was always None — /env reported active_command_pid: null
+    unconditionally, whatever was running.
+    """
+    with _active_pids_lock:
+        return next(iter(_active_pids), None)
 
 
 def active_pids() -> list:
@@ -250,7 +268,6 @@ def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
 
 
 def _run_process(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
-    tld = _get_tld()
     cmd = preprocess(raw_cmd)
     process = None
     killed = threading.Event()
@@ -269,16 +286,14 @@ def _run_process(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
             "stderr": subprocess.STDOUT,
             "stdin": subprocess.PIPE,
             "text": True,
-            "cwd": tld.current_dir,
+            "cwd": get_current_dir(),
         }
         if hasattr(os, "setsid"):
             popen_kwargs["preexec_fn"] = os.setsid
 
         process = subprocess.Popen(f"export PAGER=cat; {cmd}", **popen_kwargs)
 
-        with tld.pid_lock:
-            tld.active_pid = process.pid
-        # Also into the process-wide registry, which is what /cancel reads.
+        # The process-wide registry, which is what /cancel and /env read.
         register_active_pid(process.pid)
 
         _spawn_auto_input(process, raw_cmd)
@@ -347,8 +362,6 @@ def _run_process(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
     except Exception as e:
         _send_chunk(handler, f"\n❌ Error: {e}\n")
     finally:
-        with tld.pid_lock:
-            tld.active_pid = None
         if process is not None:
             # Reap the child. Previously nothing did, so a client that
             # disconnected mid-command — or any error in the loop above —
