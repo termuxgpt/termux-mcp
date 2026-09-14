@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 
@@ -6,6 +7,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from termux_mcp import styling
 from termux_mcp.styling import (_colors_body, _parse, find_theme, load_themes,
                                 run_style_tool)
+
+
+def _colours_state():
+    """The colours file as it is, so a test can prove nothing touched it.
+
+    None when there is no file — which is also the answer for "did this write
+    one", since the state has to match before and after.
+    """
+    if not os.path.exists(styling.COLORS_PATH):
+        return None
+    with open(styling.COLORS_PATH, "rb") as handle:
+        return (os.stat(styling.COLORS_PATH).st_mtime_ns, handle.read())
 
 
 class TestParser:
@@ -99,13 +112,45 @@ class TestFindTheme:
 
 class TestTools:
 
-    def test_only_four_tools(self):
-        assert len(styling.STYLE_TOOLS) == 4
+    def test_only_the_style_tools(self):
+        assert styling.STYLE_TOOLS == {
+            "theme_list", "theme_preview", "theme_apply", "theme_revert",
+            "banner_render",
+        }
 
     def test_list_reports_the_library(self):
         text = run_style_tool("theme_list", {})["text"]
         assert "dark" in text and "light" in text
         assert "exist in both" in text
+
+    def test_preview_returns_the_palette(self):
+        result = run_style_tool("theme_preview", {"theme": "dracula"})
+        assert not result["is_error"]
+        assert styling.THEME_JSON_MARKER in result["text"]
+        payload = result["text"].split(styling.THEME_JSON_MARKER, 1)[1].strip()
+        theme = json.loads(payload)
+        assert theme["id"] == "dracula"
+        assert theme["shade"] == "dark"
+        assert theme["background"] == "#282a36"
+        assert theme["colors"]["color0"]
+
+    def test_preview_needs_no_confirmation(self):
+        # It changes nothing, so it must not spend a confirmation — and it must
+        # not be mistaken for an apply by whoever reads the result.
+        text = run_style_tool("theme_preview", {"theme": "dracula"})["text"]
+        assert styling.CONFIRM_MARKER not in text
+        assert "Nothing has been changed" in text
+
+    def test_preview_writes_nothing(self):
+        before = _colours_state()
+        run_style_tool("theme_preview", {"theme": "dracula"})
+        run_style_tool("theme_preview", {"theme": "solarized", "shade": "light"})
+        assert _colours_state() == before
+
+    def test_preview_unknown_theme_is_an_error(self):
+        result = run_style_tool("theme_preview", {"theme": "nope"})
+        assert result["is_error"]
+        assert "No such theme" in result["text"]
 
     def test_apply_requires_confirmation(self):
         result = run_style_tool("theme_apply", {"theme": "dracula"})

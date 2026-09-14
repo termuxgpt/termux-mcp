@@ -98,6 +98,20 @@ def _theme_json(theme: dict) -> str:
     return THEME_JSON_MARKER + json.dumps(theme, separators=(",", ":"))
 
 
+def _no_such_theme(wanted: str) -> str:
+    """The refusal for a name that is not in the library.
+
+    Naming the near misses turns a dead end into a second attempt that works —
+    without them the model tends to try the same name again.
+    """
+    themes = load_themes()
+    probe = str(wanted or "").strip().lower().replace(" ", "_")
+    close = sorted({i for i, _ in themes if probe and probe in i})[:8]
+    hint = (f" Closest: {', '.join(close)}." if close
+            else " Try theme_list.")
+    return f"No such theme: {probe}.{hint}"
+
+
 def _needs_confirm(action: str, theme_id: str) -> str:
     payload = {
         "status": "confirmation_required",
@@ -205,16 +219,30 @@ def run_style_tool(name: str, params: dict) -> dict:
             ]
         return {"text": "\n".join(lines), "is_error": False}
 
+    if name == "theme_preview":
+        wanted = str(p.get("theme") or p.get("name") or "")
+        theme = find_theme(wanted, str(p.get("shade") or ""))
+        if theme is None:
+            return {"text": _no_such_theme(wanted), "is_error": True}
+        # No confirmation and no write: this is the same palette the apply path
+        # sends, minus the change. The app draws it, which is the point — a
+        # name and a couple of hex values in prose tell the user nothing about
+        # what they are choosing between.
+        return {
+            "text": (f"{theme['name']} ({theme['shade']}) — "
+                     f"{len(theme['colors'])} colours, background "
+                     f"{theme['background']}, foreground "
+                     f"{theme['foreground']}. Nothing has been changed yet; "
+                     "theme_apply puts it in place."
+                     + "\n\n" + _theme_json(theme)),
+            "is_error": False,
+        }
+
     if name == "theme_apply":
         wanted = str(p.get("theme") or p.get("name") or "")
         theme = find_theme(wanted, str(p.get("shade") or ""))
         if theme is None:
-            themes = load_themes()
-            probe = wanted.strip().lower().replace(" ", "_")
-            close = sorted({i for (i, _) in themes if probe and probe in i})[:8]
-            hint = (f" Closest: {', '.join(close)}." if close
-                    else " Try theme_list.")
-            return {"text": f"No such theme: {probe}.{hint}", "is_error": True}
+            return {"text": _no_such_theme(wanted), "is_error": True}
 
         if is_sensitive_path(COLORS_PATH) and not p.get("confirmed"):
             return {"text": _needs_confirm("theme_apply", theme["id"]),
@@ -306,5 +334,6 @@ def run_style_tool(name: str, params: dict) -> dict:
 
 
 STYLE_TOOLS = frozenset({
-    "theme_list", "theme_apply", "theme_revert", "banner_render",
+    "theme_list", "theme_preview", "theme_apply", "theme_revert",
+    "banner_render",
 })
