@@ -1,0 +1,52 @@
+name: publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check tag matches version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pyproject="$(python - <<'PY'
+          import pathlib, tomllib
+          print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])
+          PY
+          )"
+          dunder="$(python - <<'PY'
+          import pathlib, re
+          src = pathlib.Path("termux_mcp/__init__.py").read_text()
+          print(re.search(r'__version__\s*=\s*"([^"]+)"', src).group(1))
+          PY
+          )"
+          echo "tag=$tag pyproject=$pyproject __init__=$dunder"
+          if [ "$tag" != "$pyproject" ] || [ "$tag" != "$dunder" ]; then
+            echo "tag v$tag does not match pyproject ($pyproject) / __init__ ($dunder)"
+            exit 1
+          fi
+
+      - name: Install tools
+        run: python -m pip install --upgrade build pytest
+
+      - name: Test
+        run: python -m pytest tests/ -q
+
+      - name: Build
+        run: python -m build
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
