@@ -285,6 +285,27 @@ class SensitivePathTests(unittest.TestCase):
         self.assertFalse(self.sp(""))
         self.assertFalse(self.sp(None))  # type: ignore[arg-type]
 
+    def test_prefix_is_covered_selectively_not_wholesale(self):
+        """$PREFIX holds executables and config — but $TMPDIR lives under it.
+
+        Treating all of $PREFIX as sensitive meant writing an ordinary
+        temporary file required confirmation. Found by running against a real
+        device, where $TMPDIR really is $PREFIX/tmp; a Windows dev machine has
+        no such layout, so no local test would have caught it.
+        """
+        prefix = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
+        # The $PREFIX branch only means anything where Termux's layout exists.
+        # On Windows, realpath("/data/...") becomes "P:\\data\\..." and can
+        # never match, so this would fail for the wrong reason — the device run
+        # is the authoritative check for it.
+        if os.path.realpath(prefix) != prefix.replace("\\", "/"):
+            self.skipTest("$PREFIX does not resolve here (not Termux)")
+
+        for rel in ("bin/x", "etc/ssh/sshd_config", "libexec/y"):
+            self.assertTrue(self.sp(f"{prefix}/{rel}"), rel)
+        for rel in ("tmp/scratch.txt", "var/log/x.log", "share/doc/readme"):
+            self.assertFalse(self.sp(f"{prefix}/{rel}"), rel)
+
 
 class ValidationErrorResponseTests(unittest.TestCase):
     """A bad parameter must produce a 400, not a dropped connection.

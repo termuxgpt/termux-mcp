@@ -606,7 +606,11 @@ class MCPHandler(BaseHTTPRequestHandler):
         elif snaps:
             logger.info("Snapshots taken (cd command, not echoed): %s", snaps)
 
-        self._log(f"Executing: {cmd}")
+        # DEBUG, not INFO. This wrote every executed command to the log file in
+        # plaintext at the default level, and a command can carry a credential
+        # inline (`curl -H "Authorization: Bearer ..."`). Paired with the body
+        # fix above, nothing request-derived is written to the default log now.
+        logger.debug("Executing: %s", cmd)
         execute_streaming(self, cmd)
 
     def _handle_ls(self, data: dict) -> None:

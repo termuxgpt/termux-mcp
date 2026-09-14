@@ -150,6 +150,11 @@ _SENSITIVE_HOME_PREFIXES = (
 )
 
 
+# Directory names under $PREFIX that put code or configuration where it will be
+# executed or trusted. Deliberately not all of $PREFIX — see is_sensitive_path.
+_SENSITIVE_PREFIX_PARTS = ("bin", "etc", "libexec")
+
+
 def is_sensitive_path(path: str) -> bool:
     """True if a path can be used to gain persistent access to the device.
 
@@ -171,11 +176,18 @@ def is_sensitive_path(path: str) -> bool:
         if rel.startswith(_SENSITIVE_HOME_PREFIXES):
             return True
 
+    # Only the parts of $PREFIX that hold code or configuration, NOT all of it.
+    #
+    # Testing on a device showed why: $TMPDIR is $PREFIX/tmp, so treating the
+    # whole prefix as sensitive made writing an ordinary temporary file require
+    # confirmation. bin/ is on PATH so anything there gets executed, etc/ holds
+    # sshd_config, and libexec/ is the same idea.
     prefix = os.environ.get(
         "PREFIX", "/data/data/com.termux/files/usr"
     ).replace("\\", "/").rstrip("/")
-    if real == prefix or real.startswith(prefix + "/"):
-        return True
+    for sub in _SENSITIVE_PREFIX_PARTS:
+        if real == f"{prefix}/{sub}" or real.startswith(f"{prefix}/{sub}/"):
+            return True
 
     return False
 
