@@ -230,6 +230,24 @@ NATIVE_TOOL_DEFS = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "theme_preview",
+        "description": (
+            "Show what a theme looks like without applying it. Nothing on "
+            "the device changes, and the app draws the palette for the user — "
+            "so use this to offer two or three options when they have not "
+            "decided. Then call theme_apply with the one they pick."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "theme": {"type": "string", "description": "Theme name"},
+                "shade": {"type": "string",
+                          "description": "dark or light, when both exist"},
+            },
+            "required": ["theme"],
+        },
+    },
+    {
         "name": "theme_apply",
         "description": (
             "Apply a colour theme to the user's Termux, changing how every "
