@@ -34,6 +34,7 @@ from .utils import (
     is_sensitive_path, json_response, is_install_command, encode_base64,
 )
 from .tools_schema import OPENAI_TOOLS, build_catalog
+from .styling import STYLE_TOOLS, run_style_tool
 from .terminal import TERMINAL_TOOLS, run_terminal_tool
 from . import websocket as ws
 from .safety import snapshot_before_write, snapshot_targets_from_command, trash_path
@@ -573,8 +574,9 @@ class MCPHandler(BaseHTTPRequestHandler):
             return
 
         tool = path.lstrip("/")
-        if tool in TERMINAL_TOOLS:
-            result = run_terminal_tool(tool, data)
+        if tool in TERMINAL_TOOLS or tool in STYLE_TOOLS:
+            result = (run_style_tool(tool, data) if tool in STYLE_TOOLS
+                      else run_terminal_tool(tool, data))
             payload = {"output": result.get("text", ""),
                        "is_error": bool(result.get("is_error"))}
             if "terminal" in result:

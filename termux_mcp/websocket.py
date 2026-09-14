@@ -11,6 +11,7 @@ import time
 from urllib.parse import parse_qs, urlparse
 
 from .config import AUTH_TOKEN, AUTO_INPUT_INTERVAL, COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES, REQUIRE_AUTH
+from .styling import STYLE_TOOLS, run_style_tool
 from .terminal import TERMINAL_TOOLS, TerminalManager, run_terminal_tool
 from .utils import (encode_base64, expand_home, is_install_command,
                     is_safe_path, kill_process_group, require_int, shell_quote,
@@ -917,6 +918,14 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         _ws_session["name"] = None
         _ws_session["created"] = False
         _ws_reply(sock, conn, req_id, {"killed": name})
+        return
+
+    elif tool in STYLE_TOOLS:
+        result = run_style_tool(tool, p)
+        _ws_reply(sock, conn, req_id, {
+            "output": result.get("text", ""),
+            "is_error": bool(result.get("is_error")),
+        })
         return
 
     elif tool in TERMINAL_TOOLS:
