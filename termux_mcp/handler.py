@@ -98,7 +98,11 @@ class MCPHandler(BaseHTTPRequestHandler):
             if length > MAX_BODY_SIZE:
                 return {"_error": "Payload too large"}
             raw = self.rfile.read(length).decode("utf-8", errors="ignore")
-            self._log(f"Body: {raw}")
+            # Log the size, never the body. This wrote the full request to a
+            # log file inside Termux — every /run command, /sms-send body,
+            # /clipboard-set text, /write content and history record, in
+            # plaintext, readable by anything that can read the home dir.
+            self._log(f"Body: {len(raw)} bytes")
             if not raw:
                 return {}
             return json.loads(raw)
@@ -113,10 +117,20 @@ class MCPHandler(BaseHTTPRequestHandler):
         self._log(f"GET {path}")
 
         if path == "/ping":
+            # Deliberately left open. The client's host-discovery probe calls
+            # this before it has a token, and it reports nothing but liveness.
             json_response(self,200, {
                 "status": "ok",
                 "cwd": get_current_dir(),
             })
+            return
+
+        # Auth gate for every other GET. do_POST has always had one; do_GET
+        # had none at all, so /env leaked HOME and the daemon pid, and
+        # /history returned the complete command transcripts and their output
+        # to anyone who could reach the port — no credentials required.
+        if not self._authenticate():
+            self._send_unauthorized()
             return
 
         if path == "/env":

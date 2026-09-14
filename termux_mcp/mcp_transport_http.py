@@ -38,14 +38,23 @@ def _bearer_from(headers) -> str:
 
 
 def _origin_allowed(host: str, origin_header: str) -> bool:
+    """Reject cross-origin browser requests.
+
+    An absent Origin is allowed: the Android app, curl, and stdio clients send
+    none, and a non-browser client cannot be driven by a web page.
+
+    A *present* Origin must be explicitly allowlisted.
+
+    It previously returned True whenever the allowlist was empty — which is
+    the default — as long as Host looked loopback. That is precisely the shape
+    of a DNS-rebinding request: a page on any site resolves its own hostname
+    to 127.0.0.1, so the browser sends Host: 127.0.0.1 alongside the
+    attacker's Origin, and the check passed. `host` is no longer consulted;
+    it is kept so the signature stays recognisable.
+    """
     if not origin_header:
         return True
-    allow = cfg.origin_allowlist()
-    if origin_header in allow:
-        return True
-    if not allow:
-        return host in ("127.0.0.1", "localhost", "::1")
-    return False
+    return origin_header in cfg.origin_allowlist()
 
 
 def _envelope_id(msg) -> object:
