@@ -29,7 +29,10 @@ from .handlers.features import (
 from .handlers.history import (
     handle_history_list, handle_history_save, handle_history_clear,
 )
-from .utils import shell_quote, shell_quote_num, is_safe_path, json_response, is_install_command, encode_base64
+from .utils import (
+    shell_quote, shell_quote_num, require_int, require_number, is_safe_path,
+    json_response, is_install_command, encode_base64,
+)
 from .tools_schema import OPENAI_TOOLS, build_catalog
 from . import websocket as ws
 from .safety import snapshot_before_write, snapshot_targets_from_command, trash_path
@@ -45,6 +48,16 @@ from .shell import (
 logger = logging.getLogger(__name__)
 
 MAX_BODY_SIZE = 5 * 1024 * 1024  # 5 MB
+
+# Values termux-notification accepts for --priority.
+NOTIFY_PRIORITIES = ("default", "high", "low", "min", "max")
+
+# The git subcommands /git-op runs; anything else is rejected rather than
+# reaching the shell in the generic `git <action>` branch.
+GIT_OP_ACTIONS = ("clone", "status", "log", "diff", "pull", "push", "branch")
+
+# An ffmpeg position: seconds (12, 1.5) or a timecode (00:00:12).
+FFMPEG_POSITION_CHARS = set("0123456789:.")
 
 
 def _constant_time_compare(a: str, b: str) -> bool:
@@ -649,10 +662,13 @@ class MCPHandler(BaseHTTPRequestHandler):
             json_response(self,400, {"error": "Missing 'content'"})
             return
         priority = data.get("priority", "default").strip()
-        nid = data.get("id", "").strip()
+        if priority not in NOTIFY_PRIORITIES:
+            json_response(self,400, {"error": f"priority must be one of: {', '.join(NOTIFY_PRIORITIES)}"})
+            return
+        nid = str(data.get("id", "")).strip()
         flags = ""
         if nid:
-            flags += f" --id {nid}"
+            flags += f" --id {require_int(nid)}"
         if data.get("ongoing"):
             flags += " --ongoing"
         execute_streaming(self, f"termux-notification {flags} --priority {priority} --title {shell_quote(title)} --content {shell_quote(content)} 2>/dev/null && echo 'Notification sent' || echo 'Notification failed'")
@@ -662,7 +678,7 @@ class MCPHandler(BaseHTTPRequestHandler):
         if not nid:
             json_response(self,400, {"error": "Missing 'id'"})
             return
-        execute_streaming(self, f"termux-notification-remove {nid} 2>/dev/null && echo 'Removed' || echo 'Failed'")
+        execute_streaming(self, f"termux-notification-remove {require_int(nid)} 2>/dev/null && echo 'Removed' || echo 'Failed'")
 
     def _handle_share(self, data: dict) -> None:
         text = data.get("text", "").strip()
@@ -792,11 +808,13 @@ class MCPHandler(BaseHTTPRequestHandler):
         )
 
     def _handle_brightness(self, data: dict) -> None:
+        # level is quoted, not validated: termux-brightness takes 0-255 but
+        # the value is interpolated twice, so it must not carry shell syntax.
         level = shell_quote(data.get("level", "") or "")
         if not level:
             execute_streaming(self, "termux-brightness 2>/dev/null || echo '{}'")
         else:
-            execute_streaming(self, f"termux-brightness {level} 2>/dev/null && echo 'Brightness set to {level}' || echo 'Brightness failed'")
+            execute_streaming(self, f"termux-brightness {level} 2>/dev/null && echo Brightness set to {level} || echo 'Brightness failed'")
 
     def _handle_volume(self, data: dict) -> None:
         stream = data.get("stream", "music").strip()
@@ -822,7 +840,8 @@ class MCPHandler(BaseHTTPRequestHandler):
         output = data.get("output", "/sdcard/DCIM/qrcode.png").strip()
         execute_streaming(
             self,
-            f"qrencode -o {shell_quote(output)} {shell_quote(text)} 2>/dev/null && echo 'QR code saved to {output}' || echo 'Install qrencode: pkg install qrencode'"
+            f"qrencode -o {shell_quote(output)} {shell_quote(text)} 2>/dev/null && "
+            f"echo {shell_quote('QR code saved to ' + output)} || echo 'Install qrencode: pkg install qrencode'"
         )
 
     def _handle_fingerprint(self, data: dict) -> None:
@@ -849,8 +868,8 @@ class MCPHandler(BaseHTTPRequestHandler):
 
     def _handle_sensor(self, data: dict) -> None:
         sensor_name = data.get("sensor", "").strip()
-        limit = str(data.get("limit", 1))
         if sensor_name:
+            limit = require_int(data.get("limit", 1))
             execute_streaming(self, f"termux-sensor -s {shell_quote(sensor_name)} -n {limit} 2>/dev/null || echo 'Sensor failed'")
         else:
             execute_streaming(self, "termux-sensor -l 2>/dev/null || echo 'Sensor list failed'")
@@ -880,7 +899,7 @@ class MCPHandler(BaseHTTPRequestHandler):
         if not output:
             json_response(self,400, {"error": "Missing 'output' path"})
             return
-        execute_streaming(self, f"termux-storage-get {shell_quote(output)} 2>/dev/null && echo 'File saved to {output}' || echo 'Storage get failed'")
+        execute_streaming(self, f"termux-storage-get {shell_quote(output)} 2>/dev/null && echo {shell_quote('File saved to ' + output)} || echo 'Storage get failed'")
 
     def _handle_telephony_deviceinfo(self, data: dict) -> None:
         execute_streaming(self, "termux-telephony-deviceinfo 2>/dev/null || echo '{}'")
@@ -919,17 +938,17 @@ class MCPHandler(BaseHTTPRequestHandler):
         if action == "info":
             execute_streaming(self, f"identify -verbose {safe_in} 2>/dev/null || echo 'Install: pkg install imagemagick'")
         elif action == "resize" and output_file:
-            w = data.get("width", 800)
-            h = data.get("height", 600)
+            w = require_int(data.get("width", 800))
+            h = require_int(data.get("height", 600))
             execute_streaming(self, f"convert {safe_in} -resize {w}x{h}! {safe_out} 2>/dev/null && echo 'Resized to {w}x{h}' || echo 'Failed'")
         elif action == "crop" and output_file:
-            w = data.get("width", 100)
-            h = data.get("height", 100)
-            x = data.get("x", 0)
-            y = data.get("y", 0)
+            w = require_int(data.get("width", 100))
+            h = require_int(data.get("height", 100))
+            x = require_int(data.get("x", 0))
+            y = require_int(data.get("y", 0))
             execute_streaming(self, f"convert {safe_in} -crop {w}x{h}+{x}+{y} {safe_out} 2>/dev/null && echo 'Cropped' || echo 'Failed'")
         elif action == "rotate" and output_file:
-            degrees = data.get("degrees", 90)
+            degrees = require_int(data.get("degrees", 90))
             execute_streaming(self, f"convert {safe_in} -rotate {degrees} {safe_out} 2>/dev/null && echo 'Rotated {degrees}°' || echo 'Failed'")
         else:
             json_response(self,400, {"error": "Unknown action or missing output"})
@@ -950,13 +969,18 @@ class MCPHandler(BaseHTTPRequestHandler):
         if action == "info":
             execute_streaming(self, f"ffprobe -v quiet -print_format json -show_format -show_streams {safe_in} 2>/dev/null || echo 'Install: pkg install ffmpeg'")
         elif action == "compress" and output_file:
-            crf = data.get("crf", 28)
+            crf = require_number(data.get("crf", 28))
             execute_streaming(self, f"ffmpeg -i {safe_in} -vcodec libx264 -crf {crf} {safe_out} 2>&1 | tail -5 || echo 'Failed'")
         elif action == "extract-audio" and output_file:
             execute_streaming(self, f"ffmpeg -i {safe_in} -q:a 0 -map a {safe_out} 2>&1 | tail -3 || echo 'Failed'")
         elif action == "trim" and output_file:
-            start = data.get("start", "00:00:00")
-            duration = data.get("duration", 10)
+            # `start` defaults to a timecode, so it cannot go through
+            # require_number — accept only digits, colons and dots instead.
+            start = str(data.get("start", "00:00:00")).strip()
+            if not start or set(start) - FFMPEG_POSITION_CHARS:
+                json_response(self,400, {"error": "Invalid 'start' — use seconds (12) or a timecode (00:00:12)"})
+                return
+            duration = require_number(data.get("duration", 10))
             execute_streaming(self, f"ffmpeg -i {safe_in} -ss {start} -t {duration} -c copy {safe_out} 2>&1 | tail -3 || echo 'Failed'")
         else:
             json_response(self,400, {"error": "Unknown action or missing output"})
@@ -970,7 +994,7 @@ class MCPHandler(BaseHTTPRequestHandler):
         if not is_safe_path(input_file):
             json_response(self,403, {"error": "Path not allowed"})
             return
-        execute_streaming(self, f"tesseract {shell_quote(input_file)} stdout -l {lang} 2>/dev/null || echo 'Install: pkg install tesseract'")
+        execute_streaming(self, f"tesseract {shell_quote(input_file)} stdout -l {shell_quote(lang)} 2>/dev/null || echo 'Install: pkg install tesseract'")
 
     def _handle_public_ip(self, data: dict) -> None:
         execute_streaming(self, "curl -s https://api.ipify.org 2>/dev/null || curl -s https://ifconfig.me 2>/dev/null || echo 'No internet'")
@@ -989,9 +1013,13 @@ class MCPHandler(BaseHTTPRequestHandler):
         if not text:
             json_response(self,400, {"error": "Missing 'text'"})
             return
+        # Build the URL in Python and quote it as one unit — inside the
+        # double quotes this used to be in, `$(...)` in any of the three
+        # would still have been expanded by the shell.
+        url = ("https://translate.googleapis.com/translate_a/single"
+               f"?client=gtx&sl={source}&tl={target}&dt=t&q={text}")
         execute_streaming(self,
-            f"curl -s \"https://translate.googleapis.com/translate_a/single?client=gtx&sl={source}&tl={target}&dt=t&q="
-            f"{shell_quote(text)}\" 2>/dev/null | python3 -c \"import sys,json; print(json.load(sys.stdin)[0][0][0])\" 2>/dev/null "
+            f"curl -s {shell_quote(url)} 2>/dev/null | python3 -c \"import sys,json; print(json.load(sys.stdin)[0][0][0])\" 2>/dev/null "
             f"|| echo 'Translation failed'")
 
     def _handle_db_query(self, data: dict) -> None:
@@ -1023,6 +1051,13 @@ class MCPHandler(BaseHTTPRequestHandler):
         directory = data.get("directory", "").strip()
         repo_dir = data.get("repo_dir", get_current_dir()).strip()
 
+        # Checked before anything runs: `action` reaches the shell in the
+        # generic `git {action}` branch below, so it has to be a known
+        # subcommand rather than whatever the caller sent.
+        if action not in GIT_OP_ACTIONS:
+            json_response(self,400, {"error": f"Unknown action: {action}"})
+            return
+
         if action == "clone":
             if not repo_url:
                 json_response(self,400, {"error": "Missing 'url' for clone"})
@@ -1031,17 +1066,15 @@ class MCPHandler(BaseHTTPRequestHandler):
                 execute_streaming(self, f"git clone {shell_quote(repo_url)} {shell_quote(directory)} 2>&1 | tail -10 || echo 'Clone failed'")
             else:
                 execute_streaming(self, f"git clone {shell_quote(repo_url)} 2>&1 | tail -10 || echo 'Clone failed'")
-        elif action in ("status", "log", "diff", "pull", "push", "branch"):
+        else:
             if not is_safe_path(repo_dir):
                 json_response(self,403, {"error": "Path not allowed"})
                 return
             if action == "log":
-                n = data.get("limit", 5)
+                n = require_int(data.get("limit", 5))
                 execute_streaming(self, f"cd {shell_quote(repo_dir)} && git log --oneline -{n} 2>&1 || echo 'Git failed'")
             elif action == "branch":
                 execute_streaming(self, f"cd {shell_quote(repo_dir)} && git branch -a 2>&1 || echo 'Git failed'")
             else:
                 execute_streaming(self, f"cd {shell_quote(repo_dir)} && git {action} 2>&1 | tail -20 || echo 'Git failed'")
-        else:
-            json_response(self,400, {"error": f"Unknown action: {action}"})
 

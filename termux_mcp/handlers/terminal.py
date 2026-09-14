@@ -2,10 +2,19 @@ import os
 from typing import TYPE_CHECKING
 
 from ..shell import execute_streaming, get_current_dir
-from ..utils import json_response, shell_quote
+from ..utils import json_response, require_int, shell_quote
 
 if TYPE_CHECKING:
     from http.server import BaseHTTPRequestHandler
+
+
+# /git-smart falls through to `git <action>` for anything that is not one of the
+# named modes, so the action is not a free-form shell fragment. Only characters
+# that occur in real git subcommands and their arguments get through.
+GIT_SMART_ACTION_CHARS = set(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    " -_./:=@^~+*,%"
+)
 
 
 
@@ -60,7 +69,7 @@ def handle_diagnose(handler: "BaseHTTPRequestHandler", data: dict) -> None:
 def handle_pkg_smart(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     intent = data.get("intent", "").strip().lower()
     if not intent:
-        _json_response(handler, 400, {"error": "Missing 'intent'. Describe what you want to do."})
+        json_response(handler, 400, {"error": "Missing 'intent'. Describe what you want to do."})
         return
 
     do_install = data.get("install", False)
@@ -152,7 +161,7 @@ def handle_pkg_smart(handler: "BaseHTTPRequestHandler", data: dict) -> None:
 def handle_explain(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     cmd = data.get("cmd", "").strip()
     if not cmd:
-        _json_response(handler, 400, {"error": "Missing 'cmd' to explain"})
+        json_response(handler, 400, {"error": "Missing 'cmd' to explain"})
         return
 
     qcmd = shell_quote(cmd)
@@ -224,7 +233,7 @@ def handle_dev_env(handler: "BaseHTTPRequestHandler", data: dict) -> None:
             f'pkg install -y nodejs 2>&1 | tail -3 && '
             f'npm --version 2>&1 && '
             f'cd {shell_quote(cwd)} && '
-            f'echo "Run: npx create-react-app {qname}"'
+            f'echo {shell_quote("Run: npx create-react-app " + project_name)}'
         ),
         "node": (
             "Node.js Backend",
@@ -233,7 +242,7 @@ def handle_dev_env(handler: "BaseHTTPRequestHandler", data: dict) -> None:
             f'cd {shell_quote(cwd + "/" + project_name)} && '
             f'npm init -y 2>&1 | tail -3 && '
             f'echo "console.log(\'Server ready\');" > index.js && '
-            f'echo "Created: {qname}/index.js"'
+            f'echo {shell_quote("Created: " + project_name + "/index.js")}'
         ),
         "c": (
             "C/C++ Development",
@@ -241,23 +250,23 @@ def handle_dev_env(handler: "BaseHTTPRequestHandler", data: dict) -> None:
             f'mkdir -p {shell_quote(cwd + "/" + project_name)} && '
             f'cd {shell_quote(cwd + "/" + project_name)} && '
             f'echo "#include <stdio.h>\\nint main() {{\\n    printf(\\"Hello from Termux!\\\\n\\");\\n    return 0;\\n}}" > main.c && '
-            f'echo "Created: {qname}/main.c" && '
-            f'echo "Compile: cd {qname} && clang main.c -o main && ./main"'
+            f'echo {shell_quote("Created: " + project_name + "/main.c")} && '
+            f'echo {shell_quote("Compile: cd " + project_name + " && clang main.c -o main && ./main")}'
         ),
         "rust": (
             "Rust Development",
             f'pkg install -y rust binutils 2>&1 | tail -3 && '
             f'cd {shell_quote(cwd)} && '
             f'cargo new {shell_quote(project_name)} 2>&1 && '
-            f'echo "Created: {qname}/" && '
-            f'echo "Run: cd {qname} && cargo run"'
+            f'echo {shell_quote("Created: " + project_name + "/")} && '
+            f'echo {shell_quote("Run: cd " + project_name + " && cargo run")}'
         ),
         "data": (
             "Data Science",
             f'pkg install -y python python-pip 2>&1 | tail -3 && '
             f'pip install numpy pandas matplotlib jupyter 2>&1 | tail -5 && '
             f'mkdir -p {shell_quote(cwd + "/" + project_name)} && '
-            f'echo "Created: {qname}/" && '
+            f'echo {shell_quote("Created: " + project_name + "/")} && '
             f'echo "Start Jupyter: jupyter notebook"'
         ),
         "termux": (
@@ -280,14 +289,14 @@ def handle_dev_env(handler: "BaseHTTPRequestHandler", data: dict) -> None:
 def handle_review(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     file_path = data.get("file", "").strip()
     if not file_path:
-        _json_response(handler, 400, {"error": "Missing 'file' path"})
+        json_response(handler, 400, {"error": "Missing 'file' path"})
         return
 
     safe_path = shell_quote(file_path)
     ext = os.path.splitext(file_path)[1].lower()
 
     checks = [
-        f'echo "=== File: {file_path} ==="',
+        f'echo {shell_quote("=== File: " + file_path + " ===")}',
         f'echo "Size: $(wc -c < {safe_path} 2>/dev/null) bytes, Lines: $(wc -l < {safe_path} 2>/dev/null)"',
         f'echo "---"',
         f'echo "Content:"',
@@ -329,12 +338,12 @@ def handle_review(handler: "BaseHTTPRequestHandler", data: dict) -> None:
 def handle_log_analyze(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     file_path = data.get("file", "").strip()
     if not file_path:
-        _json_response(handler, 400, {"error": "Missing 'file' path"})
+        json_response(handler, 400, {"error": "Missing 'file' path"})
         return
 
     safe_path = shell_quote(file_path)
     cmd = (
-        f'echo "Analyzing: {file_path}"; echo "---"; '
+        f'echo {shell_quote("Analyzing: " + file_path)}; echo "---"; '
         f'echo "Last 200 lines:"; '
         f'tail -200 {safe_path} 2>/dev/null || echo "Cannot read file"; '
         f'echo "---"; '
@@ -351,19 +360,30 @@ def handle_script_gen(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     output = data.get("output", "").strip()
 
     if not description:
-        _json_response(handler, 400, {"error": "Missing 'description' of what the script should do"})
+        json_response(handler, 400, {"error": "Missing 'description' of what the script should do"})
         return
 
     safe_out = shell_quote(output) if output else ""
     if script_type == "py":
-        template = f'echo "#!/usr/bin/env python3\\n# Script: {output or "script.py"}\\n# {description}\\n" > {safe_out} && echo "Python template created: {output}"'
+        header = (f"#!/usr/bin/env python3\\n# Script: {output or 'script.py'}"
+                  f"\\n# {description}\\n")
+        template = (f'echo {shell_quote(header)} > {safe_out} && '
+                    f'echo {shell_quote("Python template created: " + output)}')
     else:
-        template = f'echo "#!/data/data/com.termux/files/usr/bin/bash\\n# Script: {output or "script.sh"}\\n# {description}\\n\\nset -e\\n" > {safe_out} && chmod +x {safe_out} && echo "Bash script created: {output}"'
+        header = (f"#!/data/data/com.termux/files/usr/bin/bash"
+                  f"\\n# Script: {output or 'script.sh'}"
+                  f"\\n# {description}\\n\\nset -e\\n")
+        template = (f'echo {shell_quote(header)} > {safe_out} && '
+                    f'chmod +x {safe_out} && '
+                    f'echo {shell_quote("Bash script created: " + output)}')
 
     if output:
         execute_streaming(handler, template)
     else:
-        execute_streaming(handler, f'echo "Script described: {description}"\necho "To generate, provide an output path"')
+        execute_streaming(
+            handler,
+            f'echo {shell_quote("Script described: " + description)}\n'
+            f'echo "To generate, provide an output path"')
 
 
 
@@ -371,7 +391,7 @@ def handle_deps_tree(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     package = data.get("package", "").strip()
     if package:
         execute_streaming(handler,
-            f'echo "=== Reverse depends for: {package} ===" && '
+            f'echo {shell_quote("=== Reverse depends for: " + package + " ===")} && '
             f'apt-cache rdepends {shell_quote(package)} 2>/dev/null | head -30 || '
             f'echo "Package not found"'
         )
@@ -450,13 +470,23 @@ def handle_git_smart(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     if action == "diff-summary":
         cmd = f'cd {safe_dir} && echo "=== Files Changed ===" && git diff --stat 2>&1 | tail -20 && echo "---" && echo "=== Diff ===" && git diff --unified=5 2>&1 | head -200'
     elif action == "log-recent":
-        limit = data.get("limit", 10)
+        try:
+            limit = require_int(data.get("limit", 10))
+        except ValueError:
+            json_response(handler, 400, {"error": "Valid 'limit' required"})
+            return
         cmd = f'cd {safe_dir} && git log --oneline --graph -{limit} 2>&1'
     elif action == "suggest-commit":
         cmd = f'cd {safe_dir} && echo "=== Current Changes ===" && git diff --stat 2>&1 && echo "---" && echo "Suggested commit message:" && git diff --cached 2>&1 | head -50 || git diff 2>&1 | head -50'
     elif action == "fix-conflict":
         cmd = f'cd {safe_dir} && echo "=== Conflict Status ===" && git diff --name-only --diff-filter=U 2>&1 && echo "---" && echo "Files with conflicts:" && git diff --check 2>&1 | head -20'
     else:
+        # Anything that is not a named mode is passed to git as its own
+        # arguments, so it must not be able to reach the shell.
+        if not action or set(action) - GIT_SMART_ACTION_CHARS:
+            json_response(handler, 400,
+                          {"error": f"Unsupported git action: {action}"})
+            return
         cmd = f'cd {safe_dir} && git {action} 2>&1 | tail -30'
 
     execute_streaming(handler, cmd)
@@ -468,21 +498,22 @@ def handle_regex(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     test_str = data.get("test", "").strip()
 
     if not pattern:
-        _json_response(handler, 400, {"error": "Missing 'pattern'"})
+        json_response(handler, 400, {"error": "Missing 'pattern'"})
         return
 
     safe_pattern = shell_quote(pattern)
     if test_str:
         safe_test = shell_quote(test_str)
         cmd = (
-            f'echo "Pattern: {pattern}" && '
-            f'echo "Test: {test_str}" && '
+            f'echo {shell_quote("Pattern: " + pattern)} && '
+            f'echo {shell_quote("Test: " + test_str)} && '
             f'echo "---" && '
             f'echo "Matches:" && '
             f'echo {safe_test} | grep -oP {safe_pattern} 2>&1 || echo "No matches or invalid regex"'
         )
     else:
-        cmd = f'echo "Pattern: {pattern}" && echo "Provide a test string to check matches"'
+        cmd = (f'echo {shell_quote("Pattern: " + pattern)} && '
+               f'echo "Provide a test string to check matches"')
 
     execute_streaming(handler, cmd)
 
@@ -493,17 +524,17 @@ def handle_db_design(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     db_path = data.get("output", get_current_dir() + "/database.sqlite").strip()
 
     if not schema:
-        _json_response(handler, 400, {"error": "Missing 'schema' — describe your tables"})
+        json_response(handler, 400, {"error": "Missing 'schema' — describe your tables"})
         return
 
     safe_db = shell_quote(db_path)
     # Just create the database file and echo back the schema
     cmd = (
         f'touch {safe_db} 2>/dev/null && '
-        f'echo "Database created: {db_path}" && '
+        f'echo {shell_quote("Database created: " + db_path)} && '
         f'echo "---" && '
         f'echo "Schema description:" && '
-        f'echo "{schema}" && '
+        f'echo {shell_quote(schema)} && '
         f'echo "---" && '
         f'echo "Use /db-query to run SQL. Example: CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);"'
     )
@@ -529,7 +560,7 @@ def handle_backup(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         cmd = (
             f'mkdir -p "$(dirname {safe_out})" 2>/dev/null; '
             f'echo "Backing up: {home}"; '
-            f'echo "Output: {output}"; '
+            f'echo {shell_quote("Output: " + output)}; '
             f'echo "---"; '
             f'tar -czvf {safe_out} -C "$(dirname {home})" "$(basename {home})" --exclude=".cache" --exclude="__pycache__" --exclude="node_modules" --exclude="*.pyc" 2>&1 | while read line; do echo "$line"; done && '
             f'echo "" && '
@@ -540,14 +571,14 @@ def handle_backup(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         cmd = (
             f'echo "Backing up package list..." && '
             f'pkg list-installed > {safe_out} 2>&1 && '
-            f'echo "✅ Package list saved to: {output}" && '
+            f'echo {shell_quote("✅ Package list saved to: " + output)} && '
             f'echo "Restore with: xargs pkg install -y < {safe_out}"'
         )
     elif target == "configs":
         cmd = (
             f'echo "Backing up configs..." && '
             f'tar -czf {safe_out} ~/.bashrc ~/.zshrc ~/.termux/ ~/.config/ 2>/dev/null && '
-            f'echo "✅ Configs saved to: {output}" && '
+            f'echo {shell_quote("✅ Configs saved to: " + output)} && '
             f'ls -lh {safe_out}'
         )
     elif include:
@@ -556,7 +587,7 @@ def handle_backup(handler: "BaseHTTPRequestHandler", data: dict) -> None:
             f'mkdir -p "$(dirname {safe_out})" 2>/dev/null; '
             f'echo "Backing up selected paths..." && '
             f'tar -czf {safe_out} {inc_paths} 2>&1 && '
-            f'echo "✅ Backup complete: {output}" && '
+            f'echo {shell_quote("✅ Backup complete: " + output)} && '
             f'ls -lh {safe_out} || echo "❌ Backup failed"'
         )
     else:
@@ -571,7 +602,7 @@ def handle_restore(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     target = data.get("target", "home").strip()
 
     if not backup_file:
-        _json_response(handler, 400, {"error": "Missing 'file' — path to backup archive"})
+        json_response(handler, 400, {"error": "Missing 'file' — path to backup archive"})
         return
 
     safe_file = shell_quote(backup_file)
@@ -580,27 +611,27 @@ def handle_restore(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     if target == "home":
         cmd = (
             f'echo "⚠️ WARNING: This will overwrite files in {home}"; '
-            f'echo "Restoring from: {backup_file}"; '
+            f'echo {shell_quote("Restoring from: " + backup_file)}; '
             f'echo "---"; '
             f'tar -xzf {safe_file} -C "$(dirname {home})" 2>&1 && '
             f'echo "✅ Restore complete!" || echo "❌ Restore failed"'
         )
     elif target == "packages":
         cmd = (
-            f'echo "Restoring packages from: {backup_file}"; '
+            f'echo {shell_quote("Restoring packages from: " + backup_file)}; '
             f'xargs pkg install -y < {safe_file} 2>&1 | tail -20 && '
             f'echo "✅ Packages restored!" || echo "❌ Restore failed"'
         )
     elif target == "configs":
         cmd = (
-            f'echo "Restoring configs from: {backup_file}"; '
+            f'echo {shell_quote("Restoring configs from: " + backup_file)}; '
             f'tar -xzf {safe_file} -C {shell_quote(home)} 2>&1 && '
             f'echo "✅ Configs restored!" || echo "❌ Restore failed"'
         )
     elif target == "info":
         cmd = (
             f'echo "=== Backup Info ===" && '
-            f'echo "File: {backup_file}" && '
+            f'echo {shell_quote("File: " + backup_file)} && '
             f'tar -tzf {safe_file} 2>/dev/null | head -50 && '
             f'echo "---" && '
             f'tar -tzf {safe_file} 2>/dev/null | wc -l && echo "files total"'
