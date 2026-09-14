@@ -118,6 +118,52 @@ def tmp_dir() -> str:
     return tempfile.gettempdir()
 
 
+def split_cd_chain(rest: str) -> tuple:
+    """Split the part after "cd " into (path, chained_command_or_None).
+
+    The EARLIEST separator wins, whether that is ";" or "&&".
+
+    Scanning for one separator before the other takes everything up to a match
+    that may sit inside the chained command. With ";" checked first,
+
+        cd Bull-Attack && python2 B-attack.py 2>&1 | head -30; echo done
+
+    found the ";" before `echo` — which is *after* the "&&" — so the path came
+    out as "Bull-Attack && python2 B-attack.py 2>&1 | head -30", the whole
+    chain, and the user was told that directory does not exist. `cd x && cmd`
+    is the pattern the system prompt tells the model to use, so this failed on
+    the most common shape of command.
+
+    Returns the path with trailing whitespace stripped, and the remainder
+    (stripped) or None when there is no chain.
+    """
+    cut_at = None
+    cut_sep = None
+    for sep in (";", "&&"):
+        idx = rest.find(sep)
+        if idx != -1 and (cut_at is None or idx < cut_at):
+            cut_at, cut_sep = idx, sep
+
+    if cut_at is None:
+        return rest.strip(), None
+
+    assert cut_sep is not None  # set whenever cut_at is
+    return rest[:cut_at].strip(), rest[cut_at + len(cut_sep):].strip()
+
+
+def expand_home(path: str, home: str) -> str:
+    """Expand a leading "~" to home, and only a leading one.
+
+    str.replace("~", home, 1) replaces the first tilde *anywhere*, so
+    "/opt/~backup" became "/opt//data/.../homebackup".
+    """
+    if path == "~":
+        return home
+    if path.startswith("~/"):
+        return os.path.join(home, path[2:])
+    return path
+
+
 def kill_process_group(process) -> None:
     """Terminate a spawned child and anything it started, if still running.
 

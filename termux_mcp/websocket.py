@@ -11,9 +11,9 @@ import time
 from urllib.parse import parse_qs, urlparse
 
 from .config import AUTH_TOKEN, AUTO_INPUT_INTERVAL, COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES, REQUIRE_AUTH
-from .utils import (is_install_command, kill_process_group, shell_quote,
-                    require_int, is_safe_path,
-                    encode_base64)
+from .utils import (encode_base64, expand_home, is_install_command,
+                    is_safe_path, kill_process_group, require_int, shell_quote,
+                    split_cd_chain)
 
 # Values termux-location accepts for -p, per the tool schema.
 LOCATION_PROVIDERS = ("gps", "network")
@@ -168,17 +168,11 @@ def _do_handshake(sock, headers: str) -> bool:
 
 
 def handle_cd(raw_cmd: str, conn: dict) -> tuple:
-    rest = raw_cmd[2:].strip()
-    path_part = rest
-    for sep in (";", "&&"):
-        idx = rest.find(sep)
-        if idx != -1:
-            path_part = rest[:idx].strip()
-            break
+    path_part, _ = split_cd_chain(raw_cmd[2:].strip())
     if not path_part or path_part == "~":
         conn["cwd"] = HOME
         return True, HOME
-    raw_path = path_part.strip().replace("~", HOME, 1)
+    raw_path = expand_home(path_part.strip(), HOME)
     new_path = os.path.abspath(
         raw_path if os.path.isabs(raw_path) else os.path.join(conn["cwd"], raw_path)
     )
@@ -219,16 +213,19 @@ def _ws_run_process(sock, raw_cmd: str, conn: dict) -> str:
     raw_cmd = raw_cmd.strip()
 
     if raw_cmd.startswith("cd"):
+        # Split before cd — see split_cd_chain() for why handle_cd cannot do
+        # this from the whole command.
+        _, chained = split_cd_chain(raw_cmd[2:].strip())
         ok, msg = handle_cd(raw_cmd, conn)
-        rest = raw_cmd[2:].strip()
-        for sep in (";", "&&"):
-            idx = rest.find(sep)
-            if idx != -1:
-                chained = rest[idx + len(sep):].strip()
-                if chained and ok:
-                    _send_frame(sock, conn, f"cd: {msg}\n".encode())
-                    raw_cmd = chained
-                    break
+        if chained:
+            if ok:
+                _send_frame(sock, conn, f"cd: {msg}\n".encode())
+                raw_cmd = chained
+            else:
+                # cd failed — report why instead of running the chain in the
+                # wrong directory.
+                _send_frame(sock, conn, f"{msg}\n".encode())
+                return msg
         else:
             _send_frame(sock, conn, f"{msg}\n".encode())
             return msg

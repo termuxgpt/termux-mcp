@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING, Optional
 
 from .config import AUTO_INPUT_INTERVAL, COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES
 from .security import get_risk_assessment
-from .utils import is_install_command, json_response, kill_process_group
+from .utils import (expand_home, is_install_command, json_response,
+                    kill_process_group, split_cd_chain)
 
 if TYPE_CHECKING:
     from http.server import BaseHTTPRequestHandler
@@ -168,20 +169,14 @@ def preprocess(cmd: str) -> str:
 
 
 def handle_cd(raw_cmd: str) -> tuple:
-    """Handle cd command — properly supports cd <path>; chained-command."""
-    rest = raw_cmd[2:].strip()
-    path_part = rest
-    for sep in (";", "&&"):
-        idx = rest.find(sep)
-        if idx != -1:
-            path_part = rest[:idx].strip()
-            break
+    """Change directory. Any chained command is the caller's business."""
+    path_part, _ = split_cd_chain(raw_cmd[2:].strip())
 
     if not path_part or path_part == "~":
         set_current_dir(HOME)
         return True, HOME
 
-    raw_path = path_part.strip().replace("~", HOME, 1)
+    raw_path = expand_home(path_part.strip(), HOME)
     new_path = os.path.abspath(
         raw_path if os.path.isabs(raw_path) else os.path.join(get_current_dir(), raw_path)
     )
@@ -288,20 +283,21 @@ def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str,
         return
 
     if raw_cmd.startswith("cd"):
+        # Split first, then cd. handle_cd cannot do this itself: given the
+        # whole command it has to guess where the path ends, and the guess
+        # took everything up to a ";" that sat inside the chained command —
+        # so `cd dir && cmd` reported the chain as a missing directory.
+        _path, chained = split_cd_chain(raw_cmd[2:].strip())
         ok, msg = handle_cd(raw_cmd)
-        rest = raw_cmd[2:].strip()
-        for sep in (";", "&&"):
-            idx = rest.find(sep)
-            if idx != -1:
-                chained = rest[idx + len(sep):].strip()
-                if chained and ok:
-                    handler.send_response(200)
-                    handler.send_header("Content-Type", "text/plain")
-                    handler.send_header("Transfer-Encoding", "chunked")
-                    handler.end_headers()
-                    _run_process(handler, chained, stdin_data)
-                    return
-                break
+        if chained:
+            if ok:
+                handler.send_response(200)
+                handler.send_header("Content-Type", "text/plain")
+                handler.send_header("Transfer-Encoding", "chunked")
+                handler.end_headers()
+                _run_process(handler, chained, stdin_data)
+                return
+            # cd failed — fall through and report why, without running the chain.
 
         body = (msg + "\n").encode()
         handler.send_response(200)
