@@ -150,8 +150,73 @@ class RegistryTests(unittest.TestCase):
         for name in bridge.bridge_tool_names():
             self.assertIsNotNone(bridge.route_callable(name), name)
 
-        ghost = bridge._bound_method(bridge._INSTANCE_ROUTES["ls"])
-        self.assertTrue(callable(ghost))
+    def test_every_bridge_tool_invokes_without_arity_error(self):
+        """Every route must be callable as route(handler, params).
+
+        Regression test. The routes used to be returned as methods already
+        bound to a stand-in instance, which made them one-argument callables —
+        so all 27 instance-routed tools raised TypeError on every call. The
+        previous version of this test only asserted callable(), which a bound
+        method satisfies, so it passed while the tools were broken.
+
+        The executor is stubbed for every module that binds it, so this can
+        never reach a real subprocess.
+        """
+        from termux_mcp import handler as handler_mod
+        from termux_mcp import shell as shell_mod
+        from termux_mcp.handlers import ai_power, features, history, terminal
+
+        def noop(_handler, _cmd):
+            return None
+
+        patches = [
+            mock.patch.object(shell_mod, "execute_streaming", noop),
+            mock.patch.object(handler_mod, "execute_streaming", noop),
+        ]
+        for mod in (features, terminal, ai_power, history):
+            if hasattr(mod, "execute_streaming"):
+                patches.append(mock.patch.object(mod, "execute_streaming", noop))
+
+        for p in patches:
+            p.start()
+        try:
+            for name in bridge.bridge_tool_names():
+                route = bridge.route_callable(name)
+                self.assertIsNotNone(route, name)
+                assert route is not None  # narrows the type for checkers
+                try:
+                    route(bridge.VirtualHandler(), {})
+                except TypeError as e:
+                    self.fail(
+                        f"{name} is not callable as route(handler, params): {e}"
+                    )
+                except Exception:
+                    # Empty params may legitimately fail a tool's own
+                    # validation. This test is about dispatch arity, not about
+                    # each tool accepting an empty argument set.
+                    pass
+        finally:
+            for p in patches:
+                p.stop()
+
+    def test_instance_route_reaches_the_executor(self):
+        """A bridged tool must build a command and hand it to the executor."""
+        from termux_mcp import handler as handler_mod
+        from termux_mcp import shell as shell_mod
+
+        captured = []
+
+        def capture(_handler, cmd):
+            captured.append(cmd)
+
+        route = bridge.route_callable("ls")
+        assert route is not None
+        with mock.patch.object(shell_mod, "execute_streaming", capture), \
+             mock.patch.object(handler_mod, "execute_streaming", capture):
+            route(bridge.VirtualHandler(), {"path": "."})
+
+        self.assertEqual(len(captured), 1)
+        self.assertTrue(captured[0].startswith("ls "), captured[0])
 
     def test_native_overrides_catalog(self):
         tools = bridge.build_mcp_tool_list(core.NATIVE_TOOL_DEFS)

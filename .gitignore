@@ -3,3 +3,8 @@ __pycache__/
 dist/
 *.egg-info/
 *.whl
+
+# ── Credentials — must never be committed ──────────────────────────────
+pypi_token.txt
+*-firebase-adminsdk-*.json
+.env
