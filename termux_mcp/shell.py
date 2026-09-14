@@ -88,31 +88,47 @@ def active_pids() -> list:
         return sorted(_active_pids)
 
 
-def cancel_active() -> bool:
-    """Stop every running command. True if anything was signalled.
+def cancel_active(pid: Optional[int] = None) -> bool:
+    """Stop a running command. True if anything was signalled.
+
+    Pass `pid` to stop one specific command. Without it, *every* running
+    command is signalled — which is why the REST handler requires either a pid
+    or an explicit `all: true`: HTTP carries no session identity, so an
+    unscoped cancel lets any client kill whatever any other client is running.
+
+    A pid that is not in the registry is refused rather than signalled. The
+    registry only holds commands this daemon started, so without that check a
+    caller could name any process on the device.
 
     Signals the **process group**, not just the pid: the daemon starts each
     command with `setsid`, so a command's pid is also its group id, and
     signalling the group reaches the command's children rather than orphaning
     them (an `sh -c 'ffmpeg ...'` would otherwise leave ffmpeg running).
     """
-    pids = active_pids()
-    if not pids:
+    if pid is not None:
+        with _active_pids_lock:
+            if pid not in _active_pids:
+                return False
+        targets = [pid]
+    else:
+        targets = active_pids()
+
+    if not targets:
         return False
 
-    def signal_group(pid: int, sig: int) -> bool:
+    def signal_group(target: int, sig: int) -> bool:
         try:
             if hasattr(os, "killpg"):
-                os.killpg(pid, sig)
+                os.killpg(target, sig)
             else:
-                os.kill(pid, sig)
+                os.kill(target, sig)
             return True
         except (ProcessLookupError, PermissionError):
             return False
 
     killed = False
-    for pid in pids:
-        if signal_group(pid, signal.SIGTERM):
+    for target in targets:
+        if signal_group(target, signal.SIGTERM):
             killed = True
 
     # Give well-behaved commands a moment to exit, then force the rest. Bounded,
@@ -123,8 +139,12 @@ def cancel_active() -> bool:
         # and callable on a platform that lacks it rather than raising inside
         # the cancellation path.
         force = getattr(signal, "SIGKILL", signal.SIGTERM)
-        for pid in active_pids():
-            signal_group(pid, force)
+        # Re-uses `targets`, not a fresh read of the registry. Re-reading here
+        # picked up commands that *started during the grace window* and killed
+        # those too — so cancelling one command could kill an unrelated one
+        # that had only just begun.
+        for target in targets:
+            signal_group(target, force)
 
     return killed
 
