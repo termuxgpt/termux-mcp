@@ -31,7 +31,7 @@ from .handlers.history import (
 )
 from .utils import (
     shell_quote, shell_quote_num, require_int, require_number, is_safe_path,
-    json_response, is_install_command, encode_base64,
+    is_sensitive_path, json_response, is_install_command, encode_base64,
 )
 from .tools_schema import OPENAI_TOOLS, build_catalog
 from . import websocket as ws
@@ -585,6 +585,27 @@ class MCPHandler(BaseHTTPRequestHandler):
         if not is_safe_path(path):
             json_response(self,403, {"error": "Path not allowed"})
             return
+
+        # is_safe_path is a three-prefix denylist (/dev, /proc, /sys), not a
+        # sandbox — so ~/.ssh/authorized_keys, ~/.bashrc and
+        # ~/.termux/boot/start.sh were all writable with no gate whatsoever.
+        # Those three are an SSH backdoor, code execution on every shell
+        # start, and execution at device boot respectively. Not refused, but
+        # now requiring a deliberate second step.
+        if is_sensitive_path(path) and not data.get("confirmed"):
+            json_response(self, 200, {
+                "status": "confirmation_required",
+                "path": path,
+                "risk_level": "sensitive",
+                "blocked": False,
+                "requires_confirmation": True,
+                "message": (
+                    f"Writing to {path} can grant persistent access to this "
+                    "device. Re-send with confirmed: true to proceed."
+                ),
+            })
+            return
+
         # Safety: keep the previous version before overwriting. The snapshot
         # path is echoed to the client so the AI can diff/restore on request.
         snap = snapshot_before_write(path)

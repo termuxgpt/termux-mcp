@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING
 
 from ..safety import snapshot_before_write
 from ..shell import execute_streaming, get_current_dir
-from ..utils import shell_quote, require_int, is_safe_path, json_response
+from ..utils import (shell_quote, require_int, is_safe_path, is_sensitive_path,
+                     json_response)
 
 if TYPE_CHECKING:
     from http.server import BaseHTTPRequestHandler
@@ -153,6 +154,22 @@ def handle_patch(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         return
     if not patch_content:
         json_response(handler, 400, {"error": "patch content required"})
+        return
+
+    # Patching is writing. Same gate as /write: a patch applied to
+    # ~/.ssh/authorized_keys or ~/.termux/boot/ is persistence, not editing.
+    if is_sensitive_path(target) and not data.get("confirmed"):
+        json_response(handler, 200, {
+            "status": "confirmation_required",
+            "path": target,
+            "risk_level": "sensitive",
+            "blocked": False,
+            "requires_confirmation": True,
+            "message": (
+                f"Patching {target} can grant persistent access to this "
+                "device. Re-send with confirmed: true to proceed."
+            ),
+        })
         return
 
     import base64
