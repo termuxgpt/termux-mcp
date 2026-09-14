@@ -2,12 +2,20 @@ import os
 from typing import TYPE_CHECKING
 
 from ..shell import execute_streaming, get_current_dir
-from ..utils import json_response, shell_quote
+from ..utils import json_response, require_int, shell_quote
 
 if TYPE_CHECKING:
     from http.server import BaseHTTPRequestHandler
 
 HOME = os.environ.get("HOME", "/data/data/com.termux/files/home")
+
+# An alias name is written into ~/.bashrc and used as a `sed`/`unalias`
+# argument, so it is held to what bash actually accepts in an alias name
+# rather than being quoted into place: a name carrying `;`, a quote or a
+# space would otherwise be persisted into the shell's startup file.
+ALIAS_NAME_CHARS = set(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-"
+)
 
 
 
@@ -17,7 +25,7 @@ def handle_smart_install(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     dry_run = data.get("dry_run", False)
 
     if not packages:
-        _json_response(handler, 400, {"error": "Missing 'packages' — space-separated list"})
+        json_response(handler, 400, {"error": "Missing 'packages' — space-separated list"})
         return
 
     checks = [
@@ -28,12 +36,15 @@ def handle_smart_install(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     ]
 
     pkg_list = packages.split()
+    # Each package is quoted on its own: quoting the joined list would hand
+    # pip/pkg a single "a b" argument instead of two packages.
+    pkgs_safe = " ".join(shell_quote(p) for p in pkg_list)
     for pkg in pkg_list:
         pkg_safe = shell_quote(pkg)
         checks.append(f'echo Checking: {shell_quote(pkg)}')
-        checks.append(f'pkg list-installed 2>/dev/null | grep -q "^{pkg_safe}/" && echo "  ✅ Already installed via pkg" || echo "  - Not in pkg"')
+        checks.append(f'pkg list-installed 2>/dev/null | grep -q {shell_quote("^" + pkg + "/")} && echo "  ✅ Already installed via pkg" || echo "  - Not in pkg"')
         checks.append(f'pip show {pkg_safe} 2>/dev/null | grep -q "Name:" && echo "  ✅ Already installed via pip" || echo "  - Not in pip"')
-        checks.append(f'npm list -g {pkg_safe} 2>/dev/null | grep -q "{pkg_safe}" && echo "  ✅ Already installed via npm" || echo "  - Not in npm"')
+        checks.append(f'npm list -g {pkg_safe} 2>/dev/null | grep -q {shell_quote(pkg)} && echo "  ✅ Already installed via npm" || echo "  - Not in npm"')
 
     checks.append('echo "---"')
     checks.append('echo "=== Python Environment ==="')
@@ -51,13 +62,13 @@ def handle_smart_install(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         checks.append('echo "---"')
         checks.append(f'echo Installing: {shell_quote(packages)}')
         if manager == "pip":
-            checks.append(f'pip install {packages} 2>&1 | tail -20')
+            checks.append(f'pip install {pkgs_safe} 2>&1 | tail -20')
         elif manager == "pkg":
-            checks.append(f'pkg install -y {packages} 2>&1 | tail -20')
+            checks.append(f'pkg install -y {pkgs_safe} 2>&1 | tail -20')
         else:
-            checks.append(f'pkg install -y {packages} 2>&1 | tail -15')
+            checks.append(f'pkg install -y {pkgs_safe} 2>&1 | tail -15')
             checks.append('echo "---"')
-            checks.append(f'pip install {packages} 2>&1 | tail -15')
+            checks.append(f'pip install {pkgs_safe} 2>&1 | tail -15')
 
     cmd = " && ".join(checks)
     execute_streaming(handler, cmd)
@@ -219,9 +230,9 @@ def handle_error_explain(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     checks = ['echo "=== Error Context ==="']
 
     if error_text:
-        checks.append(f'echo "Error: {error_text}"')
+        checks.append(f'echo {shell_quote("Error: " + error_text)}')
     if context_cmd:
-        checks.append(f'echo "Command: {context_cmd}"')
+        checks.append(f'echo {shell_quote("Command: " + context_cmd)}')
 
     checks += [
         'echo "---"',
@@ -327,11 +338,11 @@ def handle_service_guard(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         ]
     elif action == "start":
         if not service_name or not service_cmd:
-            _json_response(handler, 400, {"error": "Missing 'name' and 'cmd' for service"})
+            json_response(handler, 400, {"error": "Missing 'name' and 'cmd' for service"})
             return
         checks = [
-            f'echo "Starting service: {service_name}"',
-            f'echo "Command: {service_cmd}"',
+            f'echo {shell_quote("Starting service: " + service_name)}',
+            f'echo {shell_quote("Command: " + service_cmd)}',
             f'nohup sh -c {shell_quote(service_cmd)} > /dev/null 2>&1 &',
             f'sleep 1',
             f'echo "PID: $(pgrep -f {shell_quote(service_cmd)} | head -1 || echo unknown)"',
@@ -341,10 +352,10 @@ def handle_service_guard(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         ]
     elif action == "stop":
         if not service_name:
-            _json_response(handler, 400, {"error": "Missing 'name' of service to stop"})
+            json_response(handler, 400, {"error": "Missing 'name' of service to stop"})
             return
         checks = [
-            f'echo "Stopping: {service_name}"',
+            f'echo {shell_quote("Stopping: " + service_name)}',
             f'pkill -f {shell_quote(service_name)} 2>/dev/null && echo "  ✅ Stopped" || echo "  Service not found"',
         ]
     elif action == "wake-lock":
@@ -368,12 +379,16 @@ def handle_service_guard(handler: "BaseHTTPRequestHandler", data: dict) -> None:
 
 def handle_history_insight(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     history_file = data.get("file", f"{HOME}/.bash_history").strip()
-    limit = data.get("limit", 100)
+    try:
+        limit = require_int(data.get("limit", 100))
+    except ValueError:
+        json_response(handler, 400, {"error": "Valid 'limit' required"})
+        return
     safe_file = shell_quote(history_file)
 
     checks = [
         f'echo "=== Shell History Analysis ==="',
-        f'echo "File: {history_file}"',
+        f'echo {shell_quote("File: " + history_file)}',
         f'echo "Total commands: $(wc -l < {safe_file} 2>/dev/null || echo 0)"',
         f'echo "---"',
         f'echo "Most used commands (last {limit}):"',
@@ -449,24 +464,31 @@ def handle_quick_cmd(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         ]
     elif action == "add":
         if not alias_name or not alias_cmd:
-            _json_response(handler, 400, {"error": "Missing 'name' and 'cmd' for alias"})
+            json_response(handler, 400, {"error": "Missing 'name' and 'cmd' for alias"})
+            return
+        if set(alias_name) - ALIAS_NAME_CHARS:
+            json_response(handler, 400, {"error": "Invalid alias name"})
             return
         safe_alias = shell_quote(alias_name)
         safe_cmd = shell_quote(alias_cmd)
         checks = [
-            f'echo "Adding alias: {alias_name} -> {alias_cmd}"',
-            f'echo "alias {alias_name}={shell_quote(alias_cmd)}" >> ~/.bashrc',
-            f'alias {alias_name}={shell_quote(alias_cmd)} 2>/dev/null',
+            f'echo {shell_quote("Adding alias: " + alias_name + " -> " + alias_cmd)}',
+            f'echo {shell_quote("alias " + alias_name + "=" + safe_cmd)} >> ~/.bashrc',
+            f'alias {safe_alias}={safe_cmd} 2>/dev/null',
             f'echo "✅ Alias added. Restart shell or run: source ~/.bashrc"',
         ]
     elif action == "remove":
         if not alias_name:
-            _json_response(handler, 400, {"error": "Missing 'name' of alias to remove"})
+            json_response(handler, 400, {"error": "Missing 'name' of alias to remove"})
             return
+        if set(alias_name) - ALIAS_NAME_CHARS:
+            json_response(handler, 400, {"error": "Invalid alias name"})
+            return
+        safe_alias = shell_quote(alias_name)
         checks = [
-            f'echo "Removing alias: {alias_name}"',
-            f'sed -i "/alias {alias_name}=/d" ~/.bashrc 2>/dev/null',
-            f'unalias {alias_name} 2>/dev/null',
+            f'echo {shell_quote("Removing alias: " + alias_name)}',
+            f'sed -i {shell_quote("/alias " + alias_name + "=/d")} ~/.bashrc 2>/dev/null',
+            f'unalias {safe_alias} 2>/dev/null',
             f'echo "✅ Alias removed"',
         ]
     elif action == "export":
@@ -496,7 +518,11 @@ def handle_port_manage(handler: "BaseHTTPRequestHandler", data: dict) -> None:
             'ss -tnp 2>/dev/null | head -15 || echo "  None"',
         ]
     elif action == "check":
-        port = data.get("port", "8080").strip()
+        try:
+            port = require_int(data.get("port", 8080), minimum=1, maximum=65535)
+        except ValueError:
+            json_response(handler, 400, {"error": "Valid 'port' required (1-65535)"})
+            return
         checks = [
             f'echo "Checking port: {port}"',
             f'ss -tlnp 2>/dev/null | grep ":{port}" || netstat -tlnp 2>/dev/null | grep ":{port}" || echo "  Port {port} is FREE"',
@@ -532,7 +558,7 @@ def handle_migrate(handler: "BaseHTTPRequestHandler", data: dict) -> None:
 
         checks = [
             f'echo "📦 Termux Migration Backup"',
-            f'echo "Output: {output}"',
+            f'echo {shell_quote("Output: " + output)}',
             f'echo "---"',
             f'echo "1/5 Exporting package list..."',
             f'pkg list-installed > /tmp/migrate_packages.txt 2>/dev/null && echo "  ✅ $(wc -l < /tmp/migrate_packages.txt) packages"',
@@ -560,11 +586,11 @@ def handle_migrate(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     elif action == "restore":
         archive = data.get("file", "").strip()
         if not archive:
-            _json_response(handler, 400, {"error": "Missing 'file' — path to migration archive"})
+            json_response(handler, 400, {"error": "Missing 'file' — path to migration archive"})
             return
         safe_archive = shell_quote(archive)
         checks = [
-            f'echo "📥 Restoring from: {archive}"',
+            f'echo {shell_quote("📥 Restoring from: " + archive)}',
             f'echo "---"',
             f'tar -xzf {safe_archive} -C /tmp/ 2>&1 && echo "  ✅ Extracted" || echo "  ❌ Cannot extract"',
             f'echo "1/4 Installing packages..."',
@@ -586,11 +612,11 @@ def handle_migrate(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     elif action == "preview":
         archive = data.get("file", "").strip()
         if not archive:
-            _json_response(handler, 400, {"error": "Missing 'file' to preview"})
+            json_response(handler, 400, {"error": "Missing 'file' to preview"})
             return
         safe_archive = shell_quote(archive)
         checks = [
-            f'echo "📋 Migration Preview: {archive}"',
+            f'echo {shell_quote("📋 Migration Preview: " + archive)}',
             f'tar -tzf {safe_archive} 2>/dev/null || echo "  Cannot read archive"',
         ]
     else:

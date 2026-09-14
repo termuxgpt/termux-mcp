@@ -11,7 +11,11 @@ import time
 from urllib.parse import parse_qs, urlparse
 
 from .config import AUTH_TOKEN, AUTO_INPUT_INTERVAL, COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES, REQUIRE_AUTH
-from .utils import is_install_command, shell_quote, is_safe_path, encode_base64
+from .utils import (is_install_command, shell_quote, require_int, is_safe_path,
+                    encode_base64)
+
+# Values termux-location accepts for -p, per the tool schema.
+LOCATION_PROVIDERS = ("gps", "network")
 
 WS_MAGIC = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 OP_TEXT = 0x1
@@ -418,7 +422,11 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         cmd = f"termux-screenshot {'-o ' + shell_quote(output) if output else ''} 2>/dev/null || echo Screenshot failed"
 
     elif tool == "camera":
-        camera_id = str(p.get("camera_id", 0))
+        try:
+            camera_id = require_int(p.get("camera_id", 0))
+        except ValueError:
+            _ws_reply(sock, conn, req_id, {"error": "Valid camera_id required"})
+            return
         output = p.get("output", "/sdcard/DCIM/termux_photo.jpg")
         cmd = f"termux-camera-photo -c {camera_id} {shell_quote(output)} 2>/dev/null || echo Camera photo failed"
 
@@ -427,6 +435,10 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
 
     elif tool == "location":
         provider = p.get("provider", "gps")
+        if provider not in LOCATION_PROVIDERS:
+            _ws_reply(sock, conn, req_id,
+                      {"error": f"provider must be one of: {', '.join(LOCATION_PROVIDERS)}"})
+            return
         cmd = f"termux-location -p {provider} -r last 2>/dev/null || echo '{{}}'"
 
     elif tool == "wifi":
@@ -492,11 +504,14 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         if not packages:
             _ws_reply(sock, conn, req_id,{"error": "Missing packages"})
             return
-        cmd = f"pkg install -y {packages} 2>&1 | tail -30"
+        # Quote each package separately — quoting the joined list would pass
+        # "a b" to pkg as a single package name.
+        pkg_args = " ".join(shell_quote(pk) for pk in packages.split())
+        cmd = f"pkg install -y {pkg_args} 2>&1 | tail -30"
 
     elif tool == "diagnose":
         intent = p.get("intent", "all")
-        checks = ['echo "=== Diagnose: ' + intent + ' ==="']
+        checks = [f'echo {shell_quote("=== Diagnose: " + intent + " ===")}']
         if intent in ("python", "all"):
             checks += ['python3 --version 2>&1 || echo "Missing python3"',
                        'pip --version 2>&1 || echo "Missing pip"']
@@ -537,7 +552,7 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         if not text:
             _ws_reply(sock, conn, req_id,{"error": "Missing text"})
             return
-        cmd = f"qrencode -o {shell_quote(output)} {shell_quote(text)} 2>/dev/null && echo 'QR saved to {output}' || echo 'Install: pkg install qrencode'"
+        cmd = f"qrencode -o {shell_quote(output)} {shell_quote(text)} 2>/dev/null && echo {shell_quote('QR saved to ' + output)} || echo 'Install: pkg install qrencode'"
 
     elif tool == "image_process":
         action = p.get("action", "info")
@@ -549,10 +564,16 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         if action == "info":
             cmd = f"identify -verbose {shell_quote(inp)} 2>/dev/null || echo 'Install: pkg install imagemagick'"
         elif action == "resize" and out:
-            w, h = p.get("width", 800), p.get("height", 600)
+            try:
+                w = require_int(p.get("width", 800))
+                h = require_int(p.get("height", 600))
+            except ValueError:
+                _ws_reply(sock, conn, req_id,
+                          {"error": "Valid width and height required"})
+                return
             cmd = f"convert {shell_quote(inp)} -resize {w}x{h}! {shell_quote(out)} 2>/dev/null && echo 'Resized' || echo 'Failed'"
         else:
-            cmd = f"echo 'Action: {action} on {inp}'"
+            cmd = f'echo {shell_quote("Action: " + action + " on " + inp)}'
 
     elif tool == "ocr":
         inp = p.get("input", "")
@@ -564,20 +585,29 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
     # Monitor & Manage
     elif tool == "system_info":
         cmd = ('cpu=$(top -bn1 2>/dev/null | grep -oP "[0-9.]+%" | head -1 | tr -d "%" || echo 0);'
-               'ram_total=$(free -m 2>/dev/null | awk "/Mem:/{print \$2}" || echo 0);'
-               'ram_used=$(free -m 2>/dev/null | awk "/Mem:/{print \$3}" || echo 0);'
-               'disk_total=$(df -m /data 2>/dev/null | awk "END{print \$2}" || echo 0);'
-               'disk_used=$(df -m /data 2>/dev/null | awk "END{print \$3}" || echo 0);'
+               # Raw literals: the backslash before $ is intentional — it stops
+               # the outer double quotes expanding it, so awk receives $2. In a
+               # non-raw literal Python warns "invalid escape sequence '\$'",
+               # which becomes an error in a future version.
+               r'ram_total=$(free -m 2>/dev/null | awk "/Mem:/{print \$2}" || echo 0);'
+               r'ram_used=$(free -m 2>/dev/null | awk "/Mem:/{print \$3}" || echo 0);'
+               r'disk_total=$(df -m /data 2>/dev/null | awk "END{print \$2}" || echo 0);'
+               r'disk_used=$(df -m /data 2>/dev/null | awk "END{print \$3}" || echo 0);'
                'echo "{\\"cpu_percent\\":\\"$cpu\\",\\"ram_mb_total\\":$ram_total,\\"ram_mb_used\\":$ram_used,\\"disk_mb_total\\":$disk_total,\\"disk_mb_used\\":$disk_used}"')
 
     elif tool == "process_list":
-        limit = p.get("limit", 20)
+        try:
+            limit = require_int(p.get("limit", 20))
+        except ValueError:
+            _ws_reply(sock, conn, req_id, {"error": "Valid limit required"})
+            return
         cmd = f'ps aux --sort=-%cpu 2>/dev/null | head -n {limit}'
 
     elif tool == "process_kill":
-        pid = p.get("pid", "")
-        if not pid:
-            _ws_reply(sock, conn, req_id,{"error": "Missing pid"})
+        try:
+            pid = require_int(p.get("pid", ""), minimum=1)
+        except ValueError:
+            _ws_reply(sock, conn, req_id, {"error": "Valid pid required"})
             return
         cmd = f"kill -15 {pid} 2>&1 && echo 'Process {pid} terminated' || echo 'Failed to kill {pid}'"
 

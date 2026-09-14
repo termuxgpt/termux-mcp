@@ -1,15 +1,27 @@
 import os
+import re
 import time
 from typing import TYPE_CHECKING
 
 from ..safety import snapshot_before_write
 from ..shell import execute_streaming, get_current_dir
-from ..utils import shell_quote, is_safe_path, json_response
+from ..utils import shell_quote, require_int, is_safe_path, json_response
 
 if TYPE_CHECKING:
     from http.server import BaseHTTPRequestHandler
 
 HOME = os.environ.get("HOME", "/data/data/com.termux/files/home")
+
+# A cron schedule is five space-separated fields of digits and cron
+# operators. The crontab line is written with the schedule interpolated in,
+# so anything else (quotes, `;`, `$(...)`) is rejected rather than echoed
+# into the crontab.
+CRON_FIELD = r"[0-9*/,\-]+"
+CRON_SCHEDULE_RE = re.compile(rf"{CRON_FIELD}(?: {CRON_FIELD}){{4}}")
+
+# `gh pr list --state` / `gh pr merge --<method>` accept only these.
+PR_STATES = ("open", "closed", "merged", "all")
+PR_MERGE_METHODS = ("merge", "squash", "rebase")
 
 
 def handle_system_info(handler: "BaseHTTPRequestHandler", _data: dict) -> None:
@@ -27,7 +39,7 @@ def handle_system_info(handler: "BaseHTTPRequestHandler", _data: dict) -> None:
 
 
 def handle_process_list(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    limit = str(data.get("limit", 20))
+    limit = require_int(data.get("limit", 20))
     cmd = (
         f'echo "PID USER CPU% MEM% COMMAND";'
         f'ps aux --sort=-%cpu 2>/dev/null | head -n {limit} | '
@@ -37,10 +49,13 @@ def handle_process_list(handler: "BaseHTTPRequestHandler", data: dict) -> None:
 
 
 def handle_process_kill(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    pid = str(data.get("pid", "")).strip()
-    signal_num = str(data.get("signal", "15")).strip()
-
-    if not pid or not pid.isdigit():
+    # require_int replaces the old `.isdigit()` gate on pid and validates the
+    # signal too. minimum=1 keeps the gate's guarantee that a negative pid
+    # ("-1" kills every process the user can signal) never reaches kill(1).
+    try:
+        pid = require_int(data.get("pid", ""), minimum=1)
+        signal_num = require_int(data.get("signal", 15))
+    except ValueError:
         json_response(handler, 400, {"error": "Valid PID required"})
         return
 
@@ -61,11 +76,16 @@ def handle_cron_add(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         json_response(handler, 400, {"error": "schedule and command required"})
         return
 
+    if not CRON_SCHEDULE_RE.fullmatch(schedule):
+        json_response(handler, 400, {
+            "error": "Invalid schedule - expected 5 cron fields, e.g. '*/5 * * * *'"})
+        return
+
     cmd = (
-        f'echo "Adding cron job: {label}";'
-        f'(crontab -l 2>/dev/null; echo "# {label}";'
-        f'echo "{schedule} {command}") | crontab - 2>&1 && '
-        f'echo "Cron job added: {schedule} {command}" '
+        f'echo {shell_quote("Adding cron job: " + label)};'
+        f'(crontab -l 2>/dev/null; echo {shell_quote("# " + label)};'
+        f'echo {shell_quote(schedule + " " + command)}) | crontab - 2>&1 && '
+        f'echo {shell_quote("Cron job added: " + schedule + " " + command)} '
         f'|| echo "Failed. Install: pkg install cronie termux-services"'
     )
     execute_streaming(handler, cmd)
@@ -86,8 +106,8 @@ def handle_cron_remove(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     if label:
         safe = shell_quote(label)
         cmd = (
-            f'crontab -l 2>/dev/null | grep -v "{label}" | crontab - 2>&1 && '
-            f'echo "Removed cron jobs matching: {label}" '
+            f'crontab -l 2>/dev/null | grep -v {safe} | crontab - 2>&1 && '
+            f'echo {shell_quote("Removed cron jobs matching: " + label)} '
             f'|| echo "Failed to remove"'
         )
     else:
@@ -116,7 +136,7 @@ def handle_diff(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         cmd = f'diff -u {safe1} {safe2} 2>&1 || echo "(files differ or one missing)"'
     else:
         cmd = (
-            f'echo "File: {file1}";'
+            f'echo {shell_quote("File: " + file1)};'
             f'wc -l {safe1} 2>/dev/null;'
             f'echo "Last modified: $(stat -c %y {safe1} 2>/dev/null)";'
             f'echo "Size: $(stat -c %s {safe1} 2>/dev/null) bytes"'
@@ -146,7 +166,7 @@ def handle_patch(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     cmd = prefix + (
         f'echo {shell_quote(encoded)} | base64 -d > /tmp/_mcp_patch.diff && '
         f'patch {safe_file} /tmp/_mcp_patch.diff 2>&1 && '
-        f'echo "Patch applied to {target}" || '
+        f'echo {shell_quote("Patch applied to " + target)} || '
         f'echo "Patch failed - check the diff format"'
     )
     execute_streaming(handler, cmd)
@@ -199,7 +219,8 @@ def handle_cloud_sync(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         output = data.get("output", f"termux_backup_{time.strftime('%Y%m%d_%H%M%S')}.tar.gz").strip()
         safe_out = shell_quote(output)
         target = data.get("target", "home").strip()
-        cmd = f'echo "Creating cloud backup: {output}"; echo "---"; cd {shell_quote(HOME)} && '
+        cmd = (f'echo {shell_quote("Creating cloud backup: " + output)}; '
+               f'echo "---"; cd {shell_quote(HOME)} && ')
         if target == "home":
             cmd += (
                 f'tar -czf {safe_out} . --exclude=".cache" --exclude="__pycache__" '
@@ -210,8 +231,8 @@ def handle_cloud_sync(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         elif target == "configs":
             cmd += f'tar -czf {safe_out} .bashrc .zshrc .termux/ .config/ 2>/dev/null && '
         cmd += (
-            f'echo "---"; echo "Backup created: {output}"; ls -lh {safe_out};'
-            f'echo ""; echo "To upload: pkg install rclone && rclone copy {output} remote:termux-backups/"'
+            f'echo "---"; echo {shell_quote("Backup created: " + output)}; ls -lh {safe_out};'
+            f'echo ""; echo {shell_quote("To upload: pkg install rclone && rclone copy " + output + " remote:termux-backups/")}'
         )
     elif action == "restore":
         backup_file = data.get("file", "").strip()
@@ -220,7 +241,7 @@ def handle_cloud_sync(handler: "BaseHTTPRequestHandler", data: dict) -> None:
             return
         safe_file = shell_quote(backup_file)
         cmd = (
-            f'echo "Restoring from: {backup_file}";'
+            f'echo {shell_quote("Restoring from: " + backup_file)};'
             f'tar -xzf {safe_file} -C {shell_quote(HOME)} 2>&1 && '
             f'echo "Restore complete" || echo "Restore failed"'
         )
@@ -236,28 +257,43 @@ def handle_git_pr(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     action = data.get("action", "list").strip()
     repo = data.get("repo", "").strip()
     number = str(data.get("number", "")).strip()
+    # The PR number is interpolated unquoted in four branches below; empty
+    # stays empty so the per-branch "PR number required" checks still fire.
+    try:
+        safe_number = require_int(number) if number else ""
+    except ValueError:
+        json_response(handler, 400, {"error": "Valid PR number required"})
+        return
     flags = f" --repo {shell_quote(repo)}" if repo else ""
 
     if action == "list":
         state = data.get("state", "open").strip()
-        limit = str(data.get("limit", 10))
+        if state not in PR_STATES:
+            json_response(handler, 400, {
+                "error": f"state must be one of: {', '.join(PR_STATES)}"})
+            return
+        limit = require_int(data.get("limit", 10))
         cmd = (
-            f'echo "PRs ({state}):";'
+            f'echo {shell_quote("PRs (" + state + "):")};'
             f'gh pr list --state {state} --limit {limit} {flags} 2>&1 || echo "Install: pkg install gh && gh auth login"'
         )
     elif action == "view":
         if not number: json_response(handler, 400, {"error": "PR number required"}); return
-        cmd = f'gh pr view {number} {flags} 2>&1 || echo "PR #{number} not found"'
+        cmd = f'gh pr view {safe_number} {flags} 2>&1 || echo "PR #{safe_number} not found"'
     elif action == "diff":
         if not number: json_response(handler, 400, {"error": "PR number required"}); return
-        cmd = f'gh pr diff {number} {flags} 2>&1 | head -300 || echo "Cannot show diff"'
+        cmd = f'gh pr diff {safe_number} {flags} 2>&1 | head -300 || echo "Cannot show diff"'
     elif action == "merge":
         if not number: json_response(handler, 400, {"error": "PR number required"}); return
         method = data.get("method", "merge").strip()
-        cmd = f'echo "Merging PR #{number}..."; gh pr merge {number} --{method} {flags} 2>&1 || echo "Merge failed"'
+        if method not in PR_MERGE_METHODS:
+            json_response(handler, 400, {
+                "error": f"method must be one of: {', '.join(PR_MERGE_METHODS)}"})
+            return
+        cmd = f'echo {shell_quote("Merging PR #" + safe_number + "...")}; gh pr merge {safe_number} --{method} {flags} 2>&1 || echo "Merge failed"'
     elif action == "approve":
         if not number: json_response(handler, 400, {"error": "PR number required"}); return
-        cmd = f'gh pr review {number} --approve {flags} 2>&1 || echo "Approve failed"'
+        cmd = f'gh pr review {safe_number} --approve {flags} 2>&1 || echo "Approve failed"'
     elif action == "status":
         cmd = f'echo "PR Status:"; gh pr status {flags} 2>&1 || echo "No PRs or gh not configured"'
     elif action == "create":
@@ -265,7 +301,7 @@ def handle_git_pr(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         if not title: json_response(handler, 400, {"error": "PR title required"}); return
         body = data.get("body", "").strip()
         draft = " --draft" if data.get("draft", False) else ""
-        cmd = f'echo "Creating: {title}..."; gh pr create --title {shell_quote(title)} --body {shell_quote(body or "")} --base {shell_quote(data.get("base","main").strip())}{draft} {flags} 2>&1 || echo "Create failed"'
+        cmd = f'echo {shell_quote("Creating: " + title + "...")}; gh pr create --title {shell_quote(title)} --body {shell_quote(body or "")} --base {shell_quote(data.get("base","main").strip())}{draft} {flags} 2>&1 || echo "Create failed"'
     else:
         cmd = 'echo "Actions: list view diff merge approve status create"'
     execute_streaming(handler, cmd)
@@ -362,7 +398,9 @@ def handle_recipe_run(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     if not recipe:
         json_response(handler, 404, {"error": f"Recipe '{recipe_id}' not found"})
         return
-    cmd = " && ".join([f'echo "> {s}" && {s}' for s in recipe["steps"]])
+    # A recipe step *is* a command, so only the progress line is quoted —
+    # quoting the step itself would turn every recipe into a no-op echo.
+    cmd = " && ".join([f'echo {shell_quote(f"> {s}")} && {s}' for s in recipe["steps"]])
     execute_streaming(handler, cmd)
 
 
