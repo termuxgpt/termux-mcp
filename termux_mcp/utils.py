@@ -2,6 +2,7 @@ import base64
 import os
 import re
 import shlex
+import tempfile
 
 
 def shell_quote(s: str) -> str:
@@ -94,6 +95,27 @@ def is_safe_path(path: str) -> bool:
         if real_unix.startswith(prefix) or norm.startswith(prefix):
             return False
     return True
+
+
+def tmp_dir() -> str:
+    """A directory this process can actually write temporary files to.
+
+    Termux has $TMPDIR ($PREFIX/tmp) and that works. It also has /tmp — the
+    Android system one, owned by `shell` with mode 0771 — which this process
+    can traverse but NOT write to. Handlers that hardcoded /tmp therefore
+    failed with "Permission denied": /patch could never apply a diff, and
+    migrate could neither back up nor restore.
+    """
+    candidates = [
+        os.environ.get("TMPDIR", ""),
+        os.path.join(
+            os.environ.get("PREFIX", "/data/data/com.termux/files/usr"), "tmp"
+        ),
+    ]
+    for candidate in candidates:
+        if candidate and os.path.isdir(candidate) and os.access(candidate, os.W_OK):
+            return candidate
+    return tempfile.gettempdir()
 
 
 def kill_process_group(process) -> None:

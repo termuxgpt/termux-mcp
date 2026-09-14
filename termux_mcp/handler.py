@@ -670,13 +670,18 @@ class MCPHandler(BaseHTTPRequestHandler):
         # path is echoed to the client so the AI can diff/restore on request.
         snap = snapshot_before_write(path)
         snap_hint = f' snapshot: {shell_quote(snap)}' if snap else ''
-        # Write via base64 to avoid shell escaping issues entirely
+        # base64 to avoid shell escaping issues, but sent over stdin rather
+        # than in the command. As an argv element it hit MAX_ARG_STRLEN: the
+        # whole command is one argument to `sh -c`, capped at 128 KB, and
+        # base64 inflates by 4/3 — so /write failed above ~96 KB of content
+        # with "Argument list too long".
         encoded = base64.b64encode(content.encode()).decode()
         execute_streaming(
             self,
             f'mkdir -p "$(dirname {shell_quote(path)})" 2>/dev/null; '
-            f'echo {shell_quote(encoded)} | base64 -d > {shell_quote(path)} && '
-            f'echo Written: {shell_quote(path)}{snap_hint}'
+            f'base64 -d > {shell_quote(path)} && '
+            f'echo Written: {shell_quote(path)}{snap_hint}',
+            stdin_data=encoded,
         )
 
     def _handle_mkdir(self, data: dict) -> None:

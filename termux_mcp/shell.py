@@ -210,6 +210,30 @@ def _finalize_chunks(handler: "BaseHTTPRequestHandler") -> None:
         pass
 
 
+def _feed_stdin(process: subprocess.Popen, data: str) -> None:
+    """Write data to the child's stdin, then close it.
+
+    Closing is what signals EOF. Without it a reader like `base64 -d` waits
+    forever, and the command never finishes.
+
+    Runs on a thread so a child that does not read stdin cannot block the
+    request once the pipe buffer fills.
+    """
+    def _worker() -> None:
+        try:
+            process.stdin.write(data)
+            process.stdin.flush()
+        except Exception:
+            pass
+        finally:
+            try:
+                process.stdin.close()
+            except Exception:
+                pass
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
 def _spawn_auto_input(process: subprocess.Popen, cmd: str) -> None:
     """Only spawn auto-yes for package install commands (Bug 5 fix)."""
     if not is_install_command(cmd):
@@ -230,7 +254,16 @@ def _spawn_auto_input(process: subprocess.Popen, cmd: str) -> None:
     threading.Thread(target=_worker, daemon=True).start()
 
 
-def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
+def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str,
+                      stdin_data: Optional[str] = None) -> None:
+    """Run a command, streaming its output to the client.
+
+    `stdin_data` is written to the child's stdin and then closed. It exists so
+    payloads do not have to travel in argv: the command is passed as a single
+    element to `sh -c`, and Linux caps one argv element at MAX_ARG_STRLEN
+    (128 KB). base64 inflates by 4/3, so any /write over ~96 KB of content
+    died with "Argument list too long".
+    """
     raw_cmd = raw_cmd.strip()
 
     # Every shell-backed endpoint funnels through here, so this is the one
@@ -266,7 +299,7 @@ def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
                     handler.send_header("Content-Type", "text/plain")
                     handler.send_header("Transfer-Encoding", "chunked")
                     handler.end_headers()
-                    _run_process(handler, chained)
+                    _run_process(handler, chained, stdin_data)
                     return
                 break
 
@@ -284,10 +317,11 @@ def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
     handler.send_header("Transfer-Encoding", "chunked")
     handler.end_headers()
 
-    _run_process(handler, raw_cmd)
+    _run_process(handler, raw_cmd, stdin_data)
 
 
-def _run_process(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
+def _run_process(handler: "BaseHTTPRequestHandler", raw_cmd: str,
+                 stdin_data: Optional[str] = None) -> None:
     cmd = preprocess(raw_cmd)
     process = None
     killed = threading.Event()
@@ -316,7 +350,12 @@ def _run_process(handler: "BaseHTTPRequestHandler", raw_cmd: str) -> None:
         # The process-wide registry, which is what /cancel and /env read.
         register_active_pid(process.pid)
 
-        _spawn_auto_input(process, raw_cmd)
+        if stdin_data is not None:
+            # Caller-supplied payload takes the place of auto-input: the
+            # command is reading stdin for its data, not sitting at a prompt.
+            _feed_stdin(process, stdin_data)
+        else:
+            _spawn_auto_input(process, raw_cmd)
 
         # Timeout watchdog — only armed when TERMUX_MCP_TIMEOUT > 0.
         # Default 0 = commands run until they finish (pkg upgrade etc.).
