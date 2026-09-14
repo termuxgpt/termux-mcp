@@ -18,7 +18,8 @@ except ImportError:  # pragma: no cover
 _POSIX = pty is not None and hasattr(os, "fork") and hasattr(os, "setsid")
 
 from .config import (HOME, TERMINAL_IDLE_TIMEOUT, TERMINAL_MAX_SESSIONS,
-                     TERMINAL_RING_BYTES)
+                     TERMINAL_READ_BYTES, TERMINAL_RING_BYTES)
+from .security import get_risk_assessment
 
 _POLL_SECONDS = 0.5
 
@@ -71,9 +72,12 @@ INTERACTIVE_PROGRAMS = frozenset({
     "fzf", "lazygit", "lazydocker", "tmux", "screen",
     "ssh", "mosh", "telnet",
     "mysql", "psql", "sqlite3", "mongo", "redis-cli",
-    "python", "python3", "ipython", "node", "irb", "ghci", "lua", "ruby",
     "gdb", "lldb", "pdb", "ncdu", "ranger", "nnn", "mc", "watch", "dialog",
     "whiptail", "passwd", "su",
+})
+
+REPL_ONLY = frozenset({
+    "python", "python3", "ipython", "node", "irb", "ghci", "lua", "ruby",
 })
 
 _PREFIX_WORDS = frozenset({
@@ -91,9 +95,10 @@ def interactive_program(cmd: str):
         return None
 
     for segment in re.split(r"[;&|]+", cmd):
+        words = segment.split()
         past_prefix = False
 
-        for word in segment.split():
+        for i, word in enumerate(words):
             if not past_prefix and "=" in word and not word.startswith("-"):
                 continue
             name = os.path.basename(word)
@@ -104,6 +109,10 @@ def interactive_program(cmd: str):
                 continue
             if name in INTERACTIVE_PROGRAMS:
                 return name
+            if name in REPL_ONLY:
+                operands = [w for w in words[i + 1:] if not w.startswith("-")]
+                if not operands:
+                    return name
             break
 
     return None
@@ -371,6 +380,8 @@ class TerminalManager:
                 "fork, pty and termios are required."
             )
 
+        cls.reap_idle()
+
         with cls._lock:
             if len(cls._sessions) >= TERMINAL_MAX_SESSIONS:
                 raise RuntimeError(
@@ -476,3 +487,128 @@ class TerminalManager:
         for session in candidates:
             if session.last_activity < cutoff:
                 session.close()
+
+
+# ── Tools ────────────────────────────────────────────────────────────────
+
+TERMINAL_TOOLS = frozenset({
+    "terminal_open", "terminal_run", "terminal_send",
+    "terminal_read", "terminal_list", "terminal_close",
+})
+
+
+def _as_int(value, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _risk_gate(cmd: str, confirmed: bool):
+    risk = get_risk_assessment(cmd)
+    if risk["blocked"]:
+        return {"text": risk["message"], "is_error": True}
+    if risk["requires_confirmation"] and not confirmed:
+        return {
+            "text": (risk["message"] + "\n\nRe-invoke with `confirmed: true` "
+                     "to proceed."),
+            "is_error": False,
+        }
+    return None
+
+
+def run_terminal_tool(name: str, params: dict) -> dict:
+    p = params or {}
+
+    if name == "terminal_list":
+        terms = TerminalManager.list()
+        if not terms:
+            return {"text": "No open terminals.", "is_error": False}
+        lines = []
+        for t in terms:
+            state = "running" if t["running"] else f"exited ({t['exit_code']})"
+            watch = "user watching" if t["attached"] else "detached"
+            lines.append(f"{t['id']}  pid={t['pid']}  {t['cols']}x{t['rows']}"
+                         f"  {state}  ({watch})")
+        return {"text": "\n".join(lines), "is_error": False}
+
+    if name == "terminal_open":
+        cmd = str(p.get("cmd") or "").strip()
+        if cmd:
+            rejection = _risk_gate(cmd, bool(p.get("confirmed")))
+            if rejection is not None:
+                return rejection
+
+        try:
+            term = TerminalManager.create(
+                cols=_as_int(p.get("cols"), 80),
+                rows=_as_int(p.get("rows"), 24),
+            )
+        except Exception as e:
+            return {"text": f"Could not open a terminal: {e}", "is_error": True}
+
+        if cmd:
+            term.write((cmd + "\r").encode("utf-8"))
+
+        time.sleep(0.8 if cmd else 0.3)
+        preview = term.snapshot(TERMINAL_READ_BYTES).strip()
+
+        text = f"Terminal {term.id} open"
+        text += f" and running: {cmd}" if cmd else "."
+        text += "\nThe user can see and use this terminal now."
+        if preview:
+            text += f"\n\nCurrent screen:\n{preview}"
+        return {"text": text, "is_error": False, "terminal": term.id}
+
+    session_id = str(p.get("session") or "").strip()
+    if not session_id:
+        return {"text": "Missing 'session'.", "is_error": True}
+    term = TerminalManager.get(session_id)
+    if term is None:
+        return {"text": f"No such terminal: {session_id}", "is_error": True}
+
+    if name == "terminal_run":
+        cmd = str(p.get("cmd") or "").strip()
+        if not cmd:
+            return {"text": "Missing 'cmd'.", "is_error": True}
+        rejection = _risk_gate(cmd, bool(p.get("confirmed")))
+        if rejection is not None:
+            return rejection
+
+        if not term.write((cmd + "\r").encode("utf-8")):
+            return {"text": f"Terminal {session_id} is no longer running.",
+                    "is_error": True}
+        time.sleep(0.8)
+        preview = term.snapshot(TERMINAL_READ_BYTES).strip()
+        return {
+            "text": (f"Sent to {session_id}: {cmd}\n\n"
+                     f"Current screen:\n{preview or '(nothing yet)'}"),
+            "is_error": False,
+        }
+
+    if name == "terminal_send":
+        data = str(p.get("data") or "")
+        if not data:
+            return {"text": "Missing 'data'.", "is_error": True}
+        if not term.write(data.encode("utf-8")):
+            return {"text": f"Terminal {session_id} is no longer running.",
+                    "is_error": True}
+        return {"text": f"Sent {len(data)} byte(s) to {session_id}.",
+                "is_error": False}
+
+    if name == "terminal_read":
+        if term.closed:
+            return {"text": (f"Terminal {session_id} has exited "
+                             f"(code {term.exit_code})."), "is_error": True}
+        limit = _as_int(p.get("max_bytes"), TERMINAL_READ_BYTES)
+        limit = max(200, min(limit, 20000))
+        out = term.snapshot(limit).strip()
+        return {"text": out or "(terminal is blank)", "is_error": False}
+
+    if name == "terminal_close":
+        ok = TerminalManager.close(session_id)
+        return {"text": (f"Closed {session_id}." if ok
+                         else f"No such terminal: {session_id}"),
+                "is_error": not ok}
+
+    return {"text": f"Unknown terminal tool: {name}", "is_error": True}
