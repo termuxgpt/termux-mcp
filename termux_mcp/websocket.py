@@ -11,6 +11,7 @@ import time
 from urllib.parse import parse_qs, urlparse
 
 from .config import AUTH_TOKEN, AUTO_INPUT_INTERVAL, COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES, REQUIRE_AUTH
+from .terminal import TerminalManager
 from .utils import (encode_base64, expand_home, is_install_command,
                     is_safe_path, kill_process_group, require_int, shell_quote,
                     split_cd_chain)
@@ -20,6 +21,7 @@ LOCATION_PROVIDERS = ("gps", "network")
 
 WS_MAGIC = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 OP_TEXT = 0x1
+OP_BINARY = 0x2
 OP_CLOSE = 0x8
 OP_PING = 0x9
 OP_PONG = 0xA
@@ -1000,6 +1002,136 @@ def ws_handler(sock, raw_headers: str, path: str = "") -> None:
     except Exception:
         pass
     finally:
+        try:
+            sock.close()
+        except Exception:
+            pass
+
+
+# ── PTY terminal endpoint ─────────────────────────────────────────────────────
+# A separate route from /ws: that one serialises every tool call behind
+# conn["lock"], and the PTY reader blocks its socket when a client is slow,
+# which would stall every tool call in the app. Binary frames carry raw PTY
+# bytes in both directions; text frames carry control messages.
+
+
+def _coerce_int(value, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _qp_int(query: dict, key: str, default: int) -> int:
+    return _coerce_int(query.get(key, [default])[0], default)
+
+
+def pty_handler(sock, raw_headers: str, path: str = "") -> None:
+    if not _ws_authenticated(raw_headers, path):
+        _send_ws_auth_denied(sock)
+        try:
+            sock.close()
+        except Exception:
+            pass
+        return
+
+    if not _do_handshake(sock, raw_headers):
+        try:
+            sock.close()
+        except Exception:
+            pass
+        return
+
+    query = parse_qs(urlparse(path).query)
+    cols = max(1, min(_qp_int(query, "cols", 80), 1000))
+    rows = max(1, min(_qp_int(query, "rows", 24), 1000))
+    requested = (query.get("session") or [None])[0]
+
+    conn = {"send_lock": threading.Lock()}
+
+    try:
+        if requested:
+            session = TerminalManager.get(requested)
+            if session is None or session.closed:
+                raise RuntimeError(f"No such session: {requested}")
+        else:
+            session = TerminalManager.create(cols=cols, rows=rows)
+    except Exception as e:
+        try:
+            _send_frame(sock, conn,
+                        json.dumps({"type": "error", "message": str(e)}).encode())
+        except Exception:
+            pass
+        try:
+            sock.close()
+        except Exception:
+            pass
+        return
+
+    def send_output(data: bytes) -> None:
+        _send_frame(sock, conn, data, OP_BINARY)
+
+    def send_exit(code) -> None:
+        try:
+            _send_frame(sock, conn,
+                        json.dumps({"type": "exit", "code": code}).encode())
+        except Exception:
+            pass
+
+    token = session.attach(send_output, send_exit)
+
+    try:
+        _send_frame(sock, conn, json.dumps({
+            "type": "ready",
+            "session": session.id,
+            "pid": session.pid,
+            "cols": session.cols,
+            "rows": session.rows,
+        }).encode())
+    except Exception:
+        session.detach(token)
+        try:
+            sock.close()
+        except Exception:
+            pass
+        return
+
+    try:
+        while True:
+            opcode, data = _read_frame(sock)
+            if opcode is None or opcode == OP_CLOSE:
+                break
+
+            if opcode == OP_PING:
+                _send_frame(sock, conn, data, OP_PONG)
+                continue
+
+            if opcode == OP_BINARY:
+                if data and not session.write(data):
+                    break
+                continue
+
+            if opcode == OP_TEXT and data:
+                try:
+                    msg = json.loads(data.decode())
+                except json.JSONDecodeError:
+                    continue
+                mtype = msg.get("type")
+                if mtype == "resize":
+                    session.resize(
+                        _coerce_int(msg.get("cols"), session.cols),
+                        _coerce_int(msg.get("rows"), session.rows),
+                    )
+                elif mtype == "close":
+                    session.close()
+                    break
+                elif mtype == "ping":
+                    _send_frame(sock, conn, b'{"type":"pong"}')
+    except Exception:
+        pass
+    finally:
+        # Detach, do not kill: the shell outlives this socket.
+        session.detach(token)
         try:
             sock.close()
         except Exception:
