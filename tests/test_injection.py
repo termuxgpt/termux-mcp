@@ -251,5 +251,39 @@ class RiskGateCoverageTests(unittest.TestCase):
         self.assertFalse(_origin_allowed("evil.com", "https://evil.com"))
 
 
+class SensitivePathTests(unittest.TestCase):
+    """Writes that grant persistence must require confirmation.
+
+    is_safe_path is a three-prefix denylist (/dev, /proc, /sys), not a
+    sandbox, so ~/.ssh/authorized_keys, ~/.bashrc and ~/.termux/boot/start.sh
+    were all writable with no gate at all — an SSH backdoor, code execution
+    on every shell start, and execution at device boot.
+    """
+
+    def setUp(self):
+        from termux_mcp.utils import is_sensitive_path
+        self.sp = is_sensitive_path
+        self.home = os.path.expanduser("~")
+
+    def test_persistence_paths_are_sensitive(self):
+        for rel in (".ssh/authorized_keys", ".bashrc", ".profile",
+                    ".termux/boot/start.sh", ".termux/termux.properties",
+                    ".zshrc"):
+            self.assertTrue(self.sp(os.path.join(self.home, rel)), rel)
+
+    def test_ordinary_paths_are_not(self):
+        for rel in ("notes.txt", "projects/app/main.py", "Downloads/x.zip"):
+            self.assertFalse(self.sp(os.path.join(self.home, rel)), rel)
+
+    def test_traversal_out_of_a_sensitive_dir_is_not_sensitive(self):
+        # Resolves to ~/notes.txt, so it is an ordinary file — the check
+        # works on the realpath, not the literal string.
+        self.assertFalse(self.sp(os.path.join(self.home, ".ssh/../notes.txt")))
+
+    def test_empty_and_unresolvable_fail_closed(self):
+        self.assertFalse(self.sp(""))
+        self.assertFalse(self.sp(None))  # type: ignore[arg-type]
+
+
 if __name__ == "__main__":
     unittest.main()

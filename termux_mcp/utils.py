@@ -135,6 +135,51 @@ def kill_process_group(process) -> None:
         pass
 
 
+# Paths under $HOME that grant persistence or credential access when written.
+# Writing here is not refused — editing files is what this server is for — but
+# it requires an explicit confirmation. The difference these represent is
+# between "changed a config" and "installed something that survives a reboot".
+_SENSITIVE_HOME_PREFIXES = (
+    ".ssh/",           # authorized_keys -> SSH into the device
+    ".termux/",        # boot/start.sh -> runs at device boot
+    ".bashrc",         # runs on every interactive shell
+    ".bash_profile",
+    ".profile",
+    ".zshrc",
+    ".config/fish/",
+)
+
+
+def is_sensitive_path(path: str) -> bool:
+    """True if a path can be used to gain persistent access to the device.
+
+    Also covers anything under $PREFIX (Termux's usr/), which holds the
+    binaries and sshd configuration — writing there is installing software.
+    """
+    if not path or not isinstance(path, str):
+        return False
+
+    try:
+        real = os.path.realpath(os.path.expanduser(path)).replace("\\", "/")
+    except (ValueError, OSError):
+        # Cannot resolve it, so cannot vouch for it.
+        return True
+
+    home = os.path.expanduser("~").replace("\\", "/").rstrip("/")
+    if real == home or real.startswith(home + "/"):
+        rel = real[len(home):].lstrip("/")
+        if rel.startswith(_SENSITIVE_HOME_PREFIXES):
+            return True
+
+    prefix = os.environ.get(
+        "PREFIX", "/data/data/com.termux/files/usr"
+    ).replace("\\", "/").rstrip("/")
+    if real == prefix or real.startswith(prefix + "/"):
+        return True
+
+    return False
+
+
 def is_install_command(cmd: str) -> bool:
     return bool(re.search(
         r'\b(pkg|apt|apt-get)\s+(install|upgrade|dist-upgrade)\b', cmd
