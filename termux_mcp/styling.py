@@ -99,11 +99,6 @@ def _theme_json(theme: dict) -> str:
 
 
 def _no_such_theme(wanted: str) -> str:
-    """The refusal for a name that is not in the library.
-
-    Naming the near misses turns a dead end into a second attempt that works —
-    without them the model tends to try the same name again.
-    """
     themes = load_themes()
     probe = str(wanted or "").strip().lower().replace(" ", "_")
     close = sorted({i for i, _ in themes if probe and probe in i})[:8]
@@ -224,10 +219,6 @@ def run_style_tool(name: str, params: dict) -> dict:
         theme = find_theme(wanted, str(p.get("shade") or ""))
         if theme is None:
             return {"text": _no_such_theme(wanted), "is_error": True}
-        # No confirmation and no write: this is the same palette the apply path
-        # sends, minus the change. The app draws it, which is the point — a
-        # name and a couple of hex values in prose tell the user nothing about
-        # what they are choosing between.
         return {
             "text": (f"{theme['name']} ({theme['shade']}) — "
                      f"{len(theme['colors'])} colours, background "
