@@ -749,6 +749,104 @@ OPENAI_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "terminal_open",
+            "description": (
+                "Open a live interactive terminal (real PTY) that the user can "
+                "see and type into. Use INSTEAD OF run for anything needing a "
+                "terminal: cmatrix, vim, vi, nano, htop, top, less, man, fzf, "
+                "lazygit, tmux, ssh, mysql, psql, sqlite3, python, node, and any "
+                "full-screen or prompt-driven program — and whenever a command "
+                "would wait for input (password, y/n, an editor). Returning a "
+                "session id."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "cmd": {"type": "string", "description": "Optional command to start immediately"},
+                    "cols": {"type": "integer", "description": "Columns", "default": 80},
+                    "rows": {"type": "integer", "description": "Rows", "default": 24},
+                    "confirmed": {"type": "boolean", "description": "Acknowledge a risk warning", "default": False}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "terminal_run",
+            "description": "Type a command into an open terminal session and press Enter. Risk-checked like run.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "session": {"type": "string", "description": "Session id from terminal_open"},
+                    "cmd": {"type": "string", "description": "Command to type"},
+                    "confirmed": {"type": "boolean", "description": "Acknowledge a risk warning", "default": False}
+                },
+                "required": ["session", "cmd"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "terminal_send",
+            "description": (
+                "Send raw keystrokes to an open terminal, for driving a program "
+                "that is waiting for input. Ctrl+C '\\u0003', Ctrl+D '\\u0004', "
+                "Ctrl+Z '\\u001a', Ctrl+L '\\u000c', Escape '\\u001b', Enter "
+                "'\\r', Tab '\\t'. Arrows: '\\u001b[A' up, '\\u001b[B' down, "
+                "'\\u001b[C' right, '\\u001b[D' left."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "session": {"type": "string", "description": "Session id"},
+                    "data": {"type": "string", "description": "Raw characters to send"}
+                },
+                "required": ["session", "data"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "terminal_read",
+            "description": "Read what an open terminal currently shows, with control sequences stripped.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "session": {"type": "string", "description": "Session id"},
+                    "max_bytes": {"type": "integer", "description": "Output cap", "default": 4000}
+                },
+                "required": ["session"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "terminal_list",
+            "description": "List open terminal sessions and whether the user is watching.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "terminal_close",
+            "description": "Close a terminal session, terminating its shell and any program running in it.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "session": {"type": "string", "description": "Session id"}
+                },
+                "required": ["session"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "history",
             "description": "List previous task history entries.",
             "parameters": {"type": "object", "properties": {}}
@@ -808,6 +906,9 @@ TOOL_CATEGORIES = {
     "session_start": "session", "session_run": "session",
     "session_list": "session", "session_kill": "session",
     "session_poll": "session",
+    "terminal_open": "terminal", "terminal_run": "terminal",
+    "terminal_send": "terminal", "terminal_read": "terminal",
+    "terminal_list": "terminal", "terminal_close": "terminal",
     "history": "history", "history_save": "history", "history_clear": "history",
 }
 

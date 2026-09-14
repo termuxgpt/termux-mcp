@@ -10,10 +10,12 @@ from typing import Callable, Optional
 
 from . import mcp_bridge
 from . import mcp_config as cfg
-from .config import COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES
+from .config import (COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES,
+                     TERMINAL_READ_BYTES)
 from .safety import snapshot_targets_from_command
 from .security import get_risk_assessment
 from .shell import preprocess, set_current_dir
+from .terminal import TerminalManager, interactive_program
 from .utils import expand_home, kill_process_group, shell_quote, split_cd_chain
 from .websocket import _session_capture, _spawn_auto_input
 
@@ -117,6 +119,104 @@ NATIVE_TOOL_DEFS = [
                             "description": "Session name",
                             "default": DEFAULT_TMUX_SESSION},
             },
+        },
+    },
+
+    # ── Interactive terminal (PTY) ────────────────────────────────────────
+    {
+        "name": "terminal_open",
+        "description": (
+            "Open a live interactive terminal (a real PTY). The user sees it "
+            "and can type into it alongside you. Use this INSTEAD OF run for "
+            "anything that needs a terminal: cmatrix, vim, vi, nano, emacs, "
+            "htop, top, less, more, man, fzf, lazygit, tmux, ssh, mysql, psql, "
+            "sqlite3, python, python3, node, irb, and any full-screen or "
+            "prompt-driven program. Also use it when a command would wait for "
+            "input (a password, a y/n prompt, an editor). Returns a session id."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "cmd": {"type": "string",
+                        "description": "Optional command to start immediately"},
+                "cols": {"type": "integer", "default": 80},
+                "rows": {"type": "integer", "default": 24},
+                "confirmed": {"type": "boolean",
+                              "description": "Acknowledge a risk warning",
+                              "default": False},
+            },
+        },
+    },
+    {
+        "name": "terminal_run",
+        "description": (
+            "Type a command into an open terminal and press Enter. Risk-checked "
+            "the same way run is. Use this to launch an interactive program in "
+            "an existing session."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session": {"type": "string",
+                            "description": "Session id from terminal_open"},
+                "cmd": {"type": "string", "description": "Command to type"},
+                "confirmed": {"type": "boolean",
+                              "description": "Acknowledge a risk warning",
+                              "default": False},
+            },
+            "required": ["session", "cmd"],
+        },
+    },
+    {
+        "name": "terminal_send",
+        "description": (
+            "Send raw keystrokes to an open terminal — for driving a program "
+            "that is waiting for input, not for running commands (use "
+            "terminal_run for that). Control characters: Ctrl+C '\\u0003', "
+            "Ctrl+D '\\u0004', Ctrl+Z '\\u001a', Ctrl+L '\\u000c', Escape "
+            "'\\u001b', Enter '\\r', Tab '\\t'. Arrow keys: '\\u001b[A' up, "
+            "'\\u001b[B' down, '\\u001b[C' right, '\\u001b[D' left."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session": {"type": "string"},
+                "data": {"type": "string",
+                         "description": "Raw characters to send"},
+            },
+            "required": ["session", "data"],
+        },
+    },
+    {
+        "name": "terminal_read",
+        "description": (
+            "Read what an open terminal currently shows. Returns recent screen "
+            "text with control sequences stripped. Prefer this over asking the "
+            "user to copy output."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session": {"type": "string"},
+                "max_bytes": {"type": "integer", "default": 4000},
+            },
+            "required": ["session"],
+        },
+    },
+    {
+        "name": "terminal_list",
+        "description": "List open terminal sessions and whether the user is watching.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "terminal_close",
+        "description": "Close a terminal session, terminating its shell and any program in it.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session": {"type": "string"},
+            },
+            "required": ["session"],
         },
     },
 ]
@@ -358,6 +458,25 @@ def _tool_run(session: MCPSession, params: dict) -> dict:
             "is_error": False,
         }
 
+    # Backstop for the routing decision. The tool descriptions ask the model to
+    # use terminal_open for these, but the cost of it forgetting is a command
+    # that never returns: no tty means the program cannot draw, and
+    # COMMAND_TIMEOUT=0 means nothing kills it. Suggest rather than redirect —
+    # the model can insist with confirmed: true, and behaviour stays predictable.
+    interactive = interactive_program(cmd)
+    if interactive and not confirmed:
+        return {
+            "text": (
+                f"`{interactive}` needs a terminal. `run` gives it a pipe, not a "
+                f"tty, so it cannot draw and will likely block forever waiting "
+                f"for input.\n\nUse `terminal_open` (optionally with cmd) to run "
+                f"it in a real terminal the user can see and type into.\n\nIf you "
+                f"genuinely want it non-interactively, re-invoke with "
+                f"`confirmed: true`."
+            ),
+            "is_error": False,
+        }
+
     snaps = snapshot_targets_from_command(cmd)
     if snaps and not cmd.startswith("cd"):
         hint = "; ".join(f"snapshot: {s}" for s in snaps)
@@ -445,6 +564,131 @@ def _tool_session(session: MCPSession, name: str, params: dict) -> dict:
     return {"text": f"Unknown session tool: {name}", "is_error": True}
 
 
+def _as_int(value, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _risk_gate(cmd: str, confirmed: bool):
+    # A PTY writes to a shell's stdin rather than passing a cmd string to
+    # execute_streaming, so it steps around the single choke point where every
+    # other shell-backed path is checked (shell.py:276). Re-applied here
+    # deliberately, or the guard is silently lost.
+    risk = get_risk_assessment(cmd)
+    if risk["blocked"]:
+        return {"text": risk["message"], "is_error": True}
+    if risk["requires_confirmation"] and not confirmed:
+        return {
+            "text": (risk["message"] + "\n\nRe-invoke with `confirmed: true` "
+                     "to proceed."),
+            "is_error": False,
+        }
+    return None
+
+
+def _tool_terminal(session: MCPSession, name: str, params: dict) -> dict:
+    p = params or {}
+
+    if name == "terminal_list":
+        terms = TerminalManager.list()
+        if not terms:
+            return {"text": "No open terminals.", "is_error": False}
+        lines = []
+        for t in terms:
+            state = "running" if t["running"] else f"exited ({t['exit_code']})"
+            watch = "user watching" if t["attached"] else "detached"
+            lines.append(f"{t['id']}  pid={t['pid']}  {t['cols']}x{t['rows']}"
+                         f"  {state}  ({watch})")
+        return {"text": "\n".join(lines), "is_error": False}
+
+    if name == "terminal_open":
+        cmd = str(p.get("cmd") or "").strip()
+        if cmd:
+            rejection = _risk_gate(cmd, bool(p.get("confirmed")))
+            if rejection is not None:
+                return rejection
+
+        try:
+            term = TerminalManager.create(
+                cols=_as_int(p.get("cols"), 80),
+                rows=_as_int(p.get("rows"), 24),
+            )
+        except Exception as e:
+            return {"text": f"Could not open a terminal: {e}", "is_error": True}
+
+        if cmd:
+            term.write((cmd + "\r").encode("utf-8"))
+
+        time.sleep(0.8 if cmd else 0.3)
+        preview = term.snapshot(TERMINAL_READ_BYTES).strip()
+
+        text = f"Terminal {term.id} open"
+        text += f" and running: {cmd}" if cmd else "."
+        text += "\nThe user can see and use this terminal now."
+        if preview:
+            text += f"\n\nCurrent screen:\n{preview}"
+        return {"text": text, "is_error": False, "terminal": term.id}
+
+    session_id = str(p.get("session") or "").strip()
+    if not session_id:
+        return {"text": "Missing 'session'.", "is_error": True}
+    term = TerminalManager.get(session_id)
+    if term is None:
+        return {"text": f"No such terminal: {session_id}",
+                "is_error": True}
+
+    if name == "terminal_run":
+        cmd = str(p.get("cmd") or "").strip()
+        if not cmd:
+            return {"text": "Missing 'cmd'.", "is_error": True}
+        rejection = _risk_gate(cmd, bool(p.get("confirmed")))
+        if rejection is not None:
+            return rejection
+
+        if not term.write((cmd + "\r").encode("utf-8")):
+            return {"text": f"Terminal {session_id} is no longer running.",
+                    "is_error": True}
+        time.sleep(0.8)
+        preview = term.snapshot(TERMINAL_READ_BYTES).strip()
+        return {
+            "text": (f"Sent to {session_id}: {cmd}\n\n"
+                     f"Current screen:\n{preview or '(nothing yet)'}"),
+            "is_error": False,
+        }
+
+    if name == "terminal_send":
+        data = str(p.get("data") or "")
+        if not data:
+            return {"text": "Missing 'data'.", "is_error": True}
+        # Not risk-gated, unlike terminal_run: these are keystrokes aimed at a
+        # program already running and visible to the user, where the value is
+        # immediacy (Ctrl+C, Ctrl+D). Starting commands is the gated path.
+        if not term.write(data.encode("utf-8")):
+            return {"text": f"Terminal {session_id} is no longer running.",
+                    "is_error": True}
+        return {"text": f"Sent {len(data)} byte(s) to {session_id}.",
+                "is_error": False}
+
+    if name == "terminal_read":
+        if term.closed:
+            return {"text": (f"Terminal {session_id} has exited "
+                             f"(code {term.exit_code})."), "is_error": True}
+        limit = _as_int(p.get("max_bytes"), TERMINAL_READ_BYTES)
+        limit = max(200, min(limit, 20000))
+        out = term.snapshot(limit).strip()
+        return {"text": out or "(terminal is blank)", "is_error": False}
+
+    if name == "terminal_close":
+        ok = TerminalManager.close(session_id)
+        return {"text": (f"Closed {session_id}." if ok
+                         else f"No such terminal: {session_id}"),
+                "is_error": not ok}
+
+    return {"text": f"Unknown terminal tool: {name}", "is_error": True}
+
+
 def invoke_tool(session: MCPSession, name: str, params: dict,
                 on_progress=None) -> dict:
     p = params or {}
@@ -461,6 +705,8 @@ def invoke_tool(session: MCPSession, name: str, params: dict,
             with session.lock:
                 if name == "run":
                     return _tool_run(session, p)
+                if name.startswith("terminal_"):
+                    return _tool_terminal(session, name, p)
                 return _tool_session(session, name, p)
 
         route = mcp_bridge.route_callable(name)

@@ -28,3 +28,13 @@ AUTO_YES_COMMANDS: list[str] = [
     "apt upgrade",
     "apt update",
 ]
+
+# ── Interactive terminal (PTY) ───────────────────────────────────────────
+
+TERMINAL_MAX_SESSIONS: int = int(os.environ.get("TERMUX_MCP_MAX_TERMINALS", "3"))
+
+TERMINAL_RING_BYTES: int = int(os.environ.get("TERMUX_MCP_TERMINAL_RING", str(1024 * 1024)))
+
+TERMINAL_IDLE_TIMEOUT: int = int(os.environ.get("TERMUX_MCP_TERMINAL_IDLE", "0"))
+
+TERMINAL_READ_BYTES: int = int(os.environ.get("TERMUX_MCP_TERMINAL_READ", "4000"))

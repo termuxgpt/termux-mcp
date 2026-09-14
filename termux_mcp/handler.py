@@ -156,6 +156,23 @@ class MCPHandler(BaseHTTPRequestHandler):
             })
             return
 
+        # WebSocket upgrades authenticate in the WS layer, which accepts either
+        # an Authorization header or a ?token= query. This must run before the
+        # HTTP gate below: _authenticate reads only the header, so gating first
+        # made the documented ?token= path unreachable.
+        if path in ("/ws", "/ws/pty"):
+            # Serialize headers manually — Message.as_string() signature is
+            # incompatible across Python versions (crashes on 3.13).
+            raw_headers = "\r\n".join(
+                f"{k}: {self.headers[k]}" for k in self.headers.keys()
+            )
+            sock = self.request
+            if path == "/ws/pty":
+                ws.pty_handler(sock, raw_headers, self.path)
+            else:
+                ws.ws_handler(sock, raw_headers, self.path)
+            return
+
         # Auth gate for every other GET. do_POST has always had one; do_GET
         # had none at all, so /env leaked HOME and the daemon pid, and
         # /history returned the complete command transcripts and their output
@@ -179,16 +196,6 @@ class MCPHandler(BaseHTTPRequestHandler):
 
         if path == "/catalog":
             json_response(self,200, {"catalog": build_catalog()})
-            return
-
-        if path == "/ws":
-            # Serialize headers manually — Message.as_string() signature is
-            # incompatible across Python versions (crashes on 3.13).
-            raw_headers = "\r\n".join(
-                f"{k}: {self.headers[k]}" for k in self.headers.keys()
-            )
-            sock = self.request
-            ws.ws_handler(sock, raw_headers, self.path)
             return
 
         if path == "/history":
