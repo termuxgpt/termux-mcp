@@ -51,12 +51,17 @@ def is_dangerous_command(cmd: str) -> Tuple[bool, str, str]:
     if not cmd_lower or len(cmd_lower) < 3:
         return False, CommandRiskLevel.SAFE, ""
 
+    # IGNORECASE is not optional here. The command is lowercased above, but
+    # several patterns are written with uppercase flags — `chmod\s+-R\s+777`,
+    # `chown\s+-R\s+root`, `chmod\s+-R`. Matching a lowercased command against
+    # an uppercase pattern case-sensitively meant those four could never fire:
+    # `chmod -R 777 /` came back SAFE.
     for pattern in DANGEROUS_PATTERNS:
-        if re.search(pattern, cmd_lower):
+        if re.search(pattern, cmd_lower, re.IGNORECASE):
             return True, CommandRiskLevel.DANGEROUS, f"Blocked dangerous command: {cmd}"
 
     for pattern in WARNING_PATTERNS:
-        if re.search(pattern, cmd_lower):
+        if re.search(pattern, cmd_lower, re.IGNORECASE):
             return False, CommandRiskLevel.WARNING, f"High-risk command detected (confirmation recommended): {cmd}"
 
     if "sudo" in cmd_lower and "rm" in cmd_lower:
