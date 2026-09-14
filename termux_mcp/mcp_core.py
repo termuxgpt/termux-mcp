@@ -14,7 +14,7 @@ from .config import COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES
 from .safety import snapshot_targets_from_command
 from .security import get_risk_assessment
 from .shell import preprocess, set_current_dir
-from .utils import kill_process_group, shell_quote
+from .utils import expand_home, kill_process_group, shell_quote, split_cd_chain
 from .websocket import _session_capture, _spawn_auto_input
 
 
@@ -231,18 +231,11 @@ def negotiate_protocol(client_version) -> str:
 
 
 def _cd_into(session: MCPSession, raw_cmd: str):
-    rest = raw_cmd[2:].strip()
-    path_part, chained = rest, None
-    for sep in (";", "&&"):
-        idx = rest.find(sep)
-        if idx != -1:
-            path_part = rest[:idx].strip()
-            chained = rest[idx + len(sep):].strip()
-            break
+    path_part, chained = split_cd_chain(raw_cmd[2:].strip())
     if not path_part or path_part == "~":
         session.cwd = HOME
         return True, HOME, chained
-    raw_path = path_part.replace("~", HOME, 1)
+    raw_path = expand_home(path_part, HOME)
     new_path = os.path.abspath(
         raw_path if os.path.isabs(raw_path)
         else os.path.join(session.cwd, raw_path)
