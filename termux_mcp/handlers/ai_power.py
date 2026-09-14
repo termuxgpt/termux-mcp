@@ -2,7 +2,7 @@ import os
 from typing import TYPE_CHECKING
 
 from ..shell import execute_streaming, get_current_dir
-from ..utils import json_response, require_int, shell_quote
+from ..utils import json_response, require_int, shell_quote, tmp_dir
 
 if TYPE_CHECKING:
     from http.server import BaseHTTPRequestHandler
@@ -552,36 +552,43 @@ def handle_migrate(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     if action == "backup":
         import time as _time
         ts = _time.strftime("%Y%m%d_%H%M%S")
-        if not data.get("output"):
-            output = f"~/storage/shared/termux_migration_{ts}.tar.gz"
-            safe_out = shell_quote(output)
+        # Both were assigned only inside the branch, so passing an explicit
+        # `output` raised NameError on the next line.
+        output = (data.get("output") or "").strip() or (
+            f"~/storage/shared/termux_migration_{ts}.tar.gz"
+        )
+        safe_out = shell_quote(output)
+        # $TMPDIR, not /tmp. Android's /tmp exists but is mode 0771 owned by
+        # `shell`, so this process cannot write to it and every step of the
+        # backup failed silently behind its "2>/dev/null".
+        tmp = shell_quote(tmp_dir())
 
         checks = [
             f'echo "📦 Termux Migration Backup"',
             f'echo {shell_quote("Output: " + output)}',
             f'echo "---"',
             f'echo "1/5 Exporting package list..."',
-            f'pkg list-installed > /tmp/migrate_packages.txt 2>/dev/null && echo "  ✅ $(wc -l < /tmp/migrate_packages.txt) packages"',
+            f'pkg list-installed > {tmp}/migrate_packages.txt 2>/dev/null && echo "  ✅ $(wc -l < {tmp}/migrate_packages.txt) packages"',
             f'echo "2/5 Exporting pip list..."',
-            f'pip list --format=freeze > /tmp/migrate_pip.txt 2>/dev/null && echo "  ✅ $(wc -l < /tmp/migrate_pip.txt) pip packages" || echo "  No pip"',
+            f'pip list --format=freeze > {tmp}/migrate_pip.txt 2>/dev/null && echo "  ✅ $(wc -l < {tmp}/migrate_pip.txt) pip packages" || echo "  No pip"',
             f'echo "3/5 Saving crontab..."',
-            f'crontab -l > /tmp/migrate_crontab.txt 2>/dev/null && echo "  ✅ Cron jobs saved" || echo "  No crontab"',
+            f'crontab -l > {tmp}/migrate_crontab.txt 2>/dev/null && echo "  ✅ Cron jobs saved" || echo "  No crontab"',
             f'echo "4/5 Collecting configs..."',
-            f'mkdir -p /tmp/migrate_configs',
-            f'cp ~/.bashrc /tmp/migrate_configs/bashrc 2>/dev/null || true',
-            f'cp ~/.zshrc /tmp/migrate_configs/zshrc 2>/dev/null || true',
-            f'cp -r ~/.termux/ /tmp/migrate_configs/termux 2>/dev/null || true',
-            f'cp ~/.gitconfig /tmp/migrate_configs/gitconfig 2>/dev/null || true',
-            f'cp ~/.ssh/config /tmp/migrate_configs/ssh_config 2>/dev/null || true',
+            f'mkdir -p {tmp}/migrate_configs',
+            f'cp ~/.bashrc {tmp}/migrate_configs/bashrc 2>/dev/null || true',
+            f'cp ~/.zshrc {tmp}/migrate_configs/zshrc 2>/dev/null || true',
+            f'cp -r ~/.termux/ {tmp}/migrate_configs/termux 2>/dev/null || true',
+            f'cp ~/.gitconfig {tmp}/migrate_configs/gitconfig 2>/dev/null || true',
+            f'cp ~/.ssh/config {tmp}/migrate_configs/ssh_config 2>/dev/null || true',
             f'echo "  ✅ Configs collected"',
             f'echo "5/5 Creating archive..."',
             f'mkdir -p "$(dirname {safe_out})" 2>/dev/null',
-            f'tar -czf {safe_out} -C /tmp migrate_packages.txt migrate_pip.txt migrate_crontab.txt migrate_configs/ 2>&1',
+            f'tar -czf {safe_out} -C {tmp} migrate_packages.txt migrate_pip.txt migrate_crontab.txt migrate_configs/ 2>&1',
             f'echo "✅ Migration archive created!"',
             f'ls -lh {safe_out}',
             f'echo "---"',
             f'echo "Transfer to new device and run: /restore with this file"',
-            f'rm -rf /tmp/migrate_* 2>/dev/null',
+            f'rm -rf {tmp}/migrate_* 2>/dev/null',
         ]
     elif action == "restore":
         archive = data.get("file", "").strip()
@@ -589,23 +596,24 @@ def handle_migrate(handler: "BaseHTTPRequestHandler", data: dict) -> None:
             json_response(handler, 400, {"error": "Missing 'file' — path to migration archive"})
             return
         safe_archive = shell_quote(archive)
+        tmp = shell_quote(tmp_dir())
         checks = [
             f'echo {shell_quote("📥 Restoring from: " + archive)}',
             f'echo "---"',
-            f'tar -xzf {safe_archive} -C /tmp/ 2>&1 && echo "  ✅ Extracted" || echo "  ❌ Cannot extract"',
+            f'tar -xzf {safe_archive} -C {tmp} 2>&1 && echo "  ✅ Extracted" || echo "  ❌ Cannot extract"',
             f'echo "1/4 Installing packages..."',
-            f'cat /tmp/migrate_packages.txt 2>/dev/null | xargs pkg install -y 2>&1 | tail -10 || echo "  No package list"',
+            f'cat {tmp}/migrate_packages.txt 2>/dev/null | xargs pkg install -y 2>&1 | tail -10 || echo "  No package list"',
             f'echo "2/4 Installing pip packages..."',
-            f'cat /tmp/migrate_pip.txt 2>/dev/null | xargs pip install 2>&1 | tail -10 || echo "  No pip list"',
+            f'cat {tmp}/migrate_pip.txt 2>/dev/null | xargs pip install 2>&1 | tail -10 || echo "  No pip list"',
             f'echo "3/4 Restoring configs..."',
-            f'cp /tmp/migrate_configs/bashrc ~/.bashrc 2>/dev/null || true',
-            f'cp /tmp/migrate_configs/zshrc ~/.zshrc 2>/dev/null || true',
-            f'cp -r /tmp/migrate_configs/termux/ ~/.termux/ 2>/dev/null || true',
-            f'cp /tmp/migrate_configs/gitconfig ~/.gitconfig 2>/dev/null || true',
+            f'cp {tmp}/migrate_configs/bashrc ~/.bashrc 2>/dev/null || true',
+            f'cp {tmp}/migrate_configs/zshrc ~/.zshrc 2>/dev/null || true',
+            f'cp -r {tmp}/migrate_configs/termux/ ~/.termux/ 2>/dev/null || true',
+            f'cp {tmp}/migrate_configs/gitconfig ~/.gitconfig 2>/dev/null || true',
             f'echo "  ✅ Configs restored"',
             f'echo "4/4 Restoring crontab..."',
-            f'cat /tmp/migrate_crontab.txt 2>/dev/null | crontab - 2>/dev/null && echo "  ✅ Cron restored" || echo "  No crontab"',
-            f'rm -rf /tmp/migrate_* 2>/dev/null',
+            f'cat {tmp}/migrate_crontab.txt 2>/dev/null | crontab - 2>/dev/null && echo "  ✅ Cron restored" || echo "  No crontab"',
+            f'rm -rf {tmp}/migrate_* 2>/dev/null',
             f'echo "---"',
             f'echo "✅ Migration complete! Restart Termux."',
         ]

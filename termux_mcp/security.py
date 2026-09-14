@@ -7,8 +7,11 @@ class CommandRiskLevel:
     DANGEROUS = "dangerous"
 
 DANGEROUS_PATTERNS = [
-    r'rm\s+-rf\s+/?\s*$',                    # rm -rf /
-    r'rm\s+-rf\s+~',                         # rm -rf ~
+    # Dangerous *targets*, matched anywhere in the command rather than only at
+    # the end — `echo x && rm -rf /` has to be caught too.
+    r'rm\s+-rf\s+/(?:\s|$)',                 # rm -rf /   (also mid-command)
+    r'rm\s+-rf\s+~/?(\s|$)',                 # rm -rf ~   or rm -rf ~/
+    r'rm\s+-rf\s+~/\*',                      # rm -rf ~/* (all of home)
     r'rm\s+-rf\s+/\*',                       # rm -rf /*
     r'rm\s+-rf\s+--no-preserve-root',        # Attempts to bypass safety
 
@@ -28,9 +31,12 @@ DANGEROUS_PATTERNS = [
     r'pkg\s+remove\s+termux.*',              # Removing core Termux packages
     r'apt\s+purge\s+-y\s+.*termux',
 
-    r';\s*rm\s+-rf',
-    r'&&\s*rm\s+-rf',
-    r'\|\s*rm\s+-rf',
+    # Chained-`rm -rf` patterns (; && |) used to live here. They are gone
+    # because they fired on the mere *presence* of a chained rm regardless of
+    # target, and so blocked legitimate cleanup: the migrate handler ends with
+    # `... && rm -rf $TMPDIR/migrate_*`, which this refused. The target-based
+    # patterns above already catch a dangerous rm wherever it appears, and a
+    # plain `rm -rf <specific path>` is a WARNING, not a block.
 ]
 
 WARNING_PATTERNS = [

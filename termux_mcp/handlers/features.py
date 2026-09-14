@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from ..safety import snapshot_before_write
 from ..shell import execute_streaming, get_current_dir
 from ..utils import (shell_quote, require_int, is_safe_path, is_sensitive_path,
-                     json_response)
+                     json_response, tmp_dir)
 
 if TYPE_CHECKING:
     from http.server import BaseHTTPRequestHandler
@@ -147,14 +147,21 @@ def handle_diff(handler: "BaseHTTPRequestHandler", data: dict) -> None:
 
 def handle_patch(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     target = data.get("file", "").strip()
-    patch_content = data.get("patch", "").strip()
+    patch_content = data.get("patch", "")
 
     if not target or not is_safe_path(target):
         json_response(handler, 400, {"error": "Valid file path required"})
         return
-    if not patch_content:
+    if not patch_content.strip():
         json_response(handler, 400, {"error": "patch content required"})
         return
+
+    # Do NOT strip this. A unified diff must end with a newline; stripping the
+    # trailing one makes patch report "unexpectedly ends in middle of line"
+    # and refuse the diff, so every patch failed with "malformed patch" no
+    # matter how valid it was.
+    if not patch_content.endswith("\n"):
+        patch_content += "\n"
 
     # Patching is writing. Same gate as /write: a patch applied to
     # ~/.ssh/authorized_keys or ~/.termux/boot/ is persistence, not editing.
@@ -175,18 +182,25 @@ def handle_patch(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     import base64
     safe_file = shell_quote(target)
     encoded = base64.b64encode(patch_content.encode()).decode()
+    # $TMPDIR, not /tmp: the Android /tmp exists but is mode 0771 owned by
+    # `shell`, so this process cannot write to it and every patch failed with
+    # "Permission denied" before the diff was even read.
+    diff_file = shell_quote(os.path.join(tmp_dir(), "_mcp_patch.diff"))
 
     # Safety: keep the pre-patch version before the file is modified.
     snap = snapshot_before_write(target)
     prefix = f"echo {shell_quote(f'[snapshot: {snap}]')}; " if snap else ""
 
+    # The diff arrives on stdin rather than in the command string: the whole
+    # command is a single argument to `sh -c`, capped at MAX_ARG_STRLEN
+    # (128 KB), and base64 inflates by 4/3.
     cmd = prefix + (
-        f'echo {shell_quote(encoded)} | base64 -d > /tmp/_mcp_patch.diff && '
-        f'patch {safe_file} /tmp/_mcp_patch.diff 2>&1 && '
+        f'base64 -d > {diff_file} && '
+        f'patch {safe_file} {diff_file} 2>&1 && '
         f'echo {shell_quote("Patch applied to " + target)} || '
         f'echo "Patch failed - check the diff format"'
     )
-    execute_streaming(handler, cmd)
+    execute_streaming(handler, cmd, stdin_data=encoded)
 
 
 def handle_health(handler: "BaseHTTPRequestHandler", _data: dict) -> None:

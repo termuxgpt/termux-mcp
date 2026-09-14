@@ -216,7 +216,7 @@ class RiskGateCoverageTests(unittest.TestCase):
     def test_dangerous_commands_blocked_centrally(self):
         executed = []
         with mock.patch.object(shell_mod, "_run_process",
-                               lambda h, c: executed.append(c)):
+                               lambda h, c, stdin_data=None: executed.append(c)):
             for cmd in ("rm -rf /", "chmod -R 777 /", "mkfs.ext4 /dev/block/x"):
                 h = self._handler()
                 shell_mod.execute_streaming(h, cmd)
@@ -226,7 +226,7 @@ class RiskGateCoverageTests(unittest.TestCase):
     def test_safe_command_still_runs(self):
         executed = []
         with mock.patch.object(shell_mod, "_run_process",
-                               lambda h, c: executed.append(c)):
+                               lambda h, c, stdin_data=None: executed.append(c)):
             h = self._handler()
             shell_mod.execute_streaming(h, "echo hi")
             self.assertEqual(h.status, 200)
@@ -357,6 +357,95 @@ class ValidationErrorResponseTests(unittest.TestCase):
         # reached the shell.
         status, _ = self._post("/process-kill", {"pid": PAYLOAD})
         self.assertEqual(status, 400)
+
+
+class TempDirTests(unittest.TestCase):
+    """Handlers hardcoded /tmp, which this process cannot write to on Termux.
+
+    Android's /tmp exists — owned by `shell`, mode 0771 — so the Termux user
+    can traverse it but not create files in it. /patch could never apply a
+    diff, and every step of migrate failed behind its own "2>/dev/null".
+    """
+
+    def test_tmp_dir_is_actually_writable(self):
+        from termux_mcp.utils import tmp_dir
+
+        d = tmp_dir()
+        self.assertTrue(os.path.isdir(d), d)
+        probe = os.path.join(d, "_termuxgpt_probe")
+        try:
+            with open(probe, "w", encoding="utf-8") as fh:
+                fh.write("x")
+        finally:
+            if os.path.exists(probe):
+                os.remove(probe)
+
+    def test_no_module_hardcodes_a_bare_tmp(self):
+        import re as _re
+
+        # The full $PREFIX/tmp path is fine — it is writable. A bare /tmp is
+        # not. The lookbehind exempts the former.
+        bare = _re.compile(r"(?<![\w/])/tmp/")
+        for mod in (handler_mod, features, ai_power):
+            path = mod.__file__
+            assert path is not None
+            with open(path, encoding="utf-8") as fh:
+                hits = bare.findall(fh.read())
+            self.assertEqual(
+                hits, [], f"{mod.__name__} still hardcodes a bare /tmp path"
+            )
+
+
+class RiskPatternPrecisionTests(unittest.TestCase):
+    """Block the dangerous targets, not every command that mentions rm -rf.
+
+    Two rounds of over-broadness were found by running real workflows:
+
+      - `&& rm -rf` blocked the migrate handler's own cleanup step
+        (`... && rm -rf $TMPDIR/migrate_*`), so migration could never run.
+      - `rm -rf ~` matched `rm -rf ~/junk`, treating a targeted subdirectory
+        delete as catastrophic.
+
+    Both are now matched on target rather than mere presence.
+    """
+
+    DANGEROUS = [
+        "rm -rf /",
+        "echo x && rm -rf /",
+        "echo x && rm -rf / && echo y",
+        "ls; rm -rf /",
+        "rm -rf ~",
+        "rm -rf ~/",
+        "rm -rf ~/*",
+        "rm -rf /*",
+        "rm -rf --no-preserve-root /",
+        "chmod -R 777 /",
+        "dd if=/dev/zero of=/dev/block/x",
+        "mkfs.ext4 /dev/block/x",
+    ]
+
+    NOT_DANGEROUS = [
+        # The migrate handler's cleanup — must not block a real workflow.
+        "echo hi && rm -rf /data/data/com.termux/files/usr/tmp/migrate_* 2>/dev/null",
+        "rm -rf ~/junk",
+        "rm -rf ./build",
+        "ls -la",
+        "echo ok",
+    ]
+
+    def test_dangerous_targets_are_blocked(self):
+        from termux_mcp.security import get_risk_assessment
+
+        for cmd in self.DANGEROUS:
+            res = get_risk_assessment(cmd)
+            self.assertTrue(res["blocked"], f"not blocked: {cmd}")
+
+    def test_ordinary_commands_are_not_blocked(self):
+        from termux_mcp.security import get_risk_assessment
+
+        for cmd in self.NOT_DANGEROUS:
+            res = get_risk_assessment(cmd)
+            self.assertFalse(res["blocked"], f"wrongly blocked: {cmd}")
 
 
 if __name__ == "__main__":
