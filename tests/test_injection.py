@@ -15,6 +15,7 @@ binds it.
 """
 
 import io
+import json
 import os
 import sys
 import unittest
@@ -283,6 +284,58 @@ class SensitivePathTests(unittest.TestCase):
     def test_empty_and_unresolvable_fail_closed(self):
         self.assertFalse(self.sp(""))
         self.assertFalse(self.sp(None))  # type: ignore[arg-type]
+
+
+class ValidationErrorResponseTests(unittest.TestCase):
+    """A bad parameter must produce a 400, not a dropped connection.
+
+    require_number/require_int raise ValueError. Nothing caught it, so the
+    exception escaped to BaseHTTPRequestHandler, which logs and closes the
+    socket — the client saw a network error with no indication of which
+    parameter was wrong.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import threading
+        from http.server import ThreadingHTTPServer
+
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), handler_mod.MCPHandler)
+        cls.port = cls.server.server_address[1]
+        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+
+    def _post(self, path, body):
+        import urllib.error
+        import urllib.request
+
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}{path}",
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, r.read().decode()
+        except urllib.error.HTTPError as e:
+            return e.code, e.read().decode()
+
+    def test_non_numeric_parameter_returns_400(self):
+        status, body = self._post("/process-list", {"limit": PAYLOAD})
+        self.assertEqual(status, 400, f"expected 400, got {status}: {body}")
+        self.assertIn("Expected a number", body)
+
+    def test_the_payload_is_not_echoed_into_a_command(self):
+        # The error names the value, which is fine, but it must never have
+        # reached the shell.
+        status, _ = self._post("/process-kill", {"pid": PAYLOAD})
+        self.assertEqual(status, 400)
 
 
 if __name__ == "__main__":
