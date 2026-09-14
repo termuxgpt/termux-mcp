@@ -10,12 +10,11 @@ from typing import Callable, Optional
 
 from . import mcp_bridge
 from . import mcp_config as cfg
-from .config import (COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES,
-                     TERMINAL_READ_BYTES)
+from .config import COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES
 from .safety import snapshot_targets_from_command
 from .security import get_risk_assessment
 from .shell import preprocess, set_current_dir
-from .terminal import TerminalManager, interactive_program
+from .terminal import interactive_program, run_terminal_tool
 from .utils import expand_home, kill_process_group, shell_quote, split_cd_chain
 from .websocket import _session_capture, _spawn_auto_input
 
@@ -564,129 +563,8 @@ def _tool_session(session: MCPSession, name: str, params: dict) -> dict:
     return {"text": f"Unknown session tool: {name}", "is_error": True}
 
 
-def _as_int(value, default: int) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _risk_gate(cmd: str, confirmed: bool):
-    # A PTY writes to a shell's stdin rather than passing a cmd string to
-    # execute_streaming, so it steps around the single choke point where every
-    # other shell-backed path is checked (shell.py:276). Re-applied here
-    # deliberately, or the guard is silently lost.
-    risk = get_risk_assessment(cmd)
-    if risk["blocked"]:
-        return {"text": risk["message"], "is_error": True}
-    if risk["requires_confirmation"] and not confirmed:
-        return {
-            "text": (risk["message"] + "\n\nRe-invoke with `confirmed: true` "
-                     "to proceed."),
-            "is_error": False,
-        }
-    return None
-
-
 def _tool_terminal(session: MCPSession, name: str, params: dict) -> dict:
-    p = params or {}
-
-    if name == "terminal_list":
-        terms = TerminalManager.list()
-        if not terms:
-            return {"text": "No open terminals.", "is_error": False}
-        lines = []
-        for t in terms:
-            state = "running" if t["running"] else f"exited ({t['exit_code']})"
-            watch = "user watching" if t["attached"] else "detached"
-            lines.append(f"{t['id']}  pid={t['pid']}  {t['cols']}x{t['rows']}"
-                         f"  {state}  ({watch})")
-        return {"text": "\n".join(lines), "is_error": False}
-
-    if name == "terminal_open":
-        cmd = str(p.get("cmd") or "").strip()
-        if cmd:
-            rejection = _risk_gate(cmd, bool(p.get("confirmed")))
-            if rejection is not None:
-                return rejection
-
-        try:
-            term = TerminalManager.create(
-                cols=_as_int(p.get("cols"), 80),
-                rows=_as_int(p.get("rows"), 24),
-            )
-        except Exception as e:
-            return {"text": f"Could not open a terminal: {e}", "is_error": True}
-
-        if cmd:
-            term.write((cmd + "\r").encode("utf-8"))
-
-        time.sleep(0.8 if cmd else 0.3)
-        preview = term.snapshot(TERMINAL_READ_BYTES).strip()
-
-        text = f"Terminal {term.id} open"
-        text += f" and running: {cmd}" if cmd else "."
-        text += "\nThe user can see and use this terminal now."
-        if preview:
-            text += f"\n\nCurrent screen:\n{preview}"
-        return {"text": text, "is_error": False, "terminal": term.id}
-
-    session_id = str(p.get("session") or "").strip()
-    if not session_id:
-        return {"text": "Missing 'session'.", "is_error": True}
-    term = TerminalManager.get(session_id)
-    if term is None:
-        return {"text": f"No such terminal: {session_id}",
-                "is_error": True}
-
-    if name == "terminal_run":
-        cmd = str(p.get("cmd") or "").strip()
-        if not cmd:
-            return {"text": "Missing 'cmd'.", "is_error": True}
-        rejection = _risk_gate(cmd, bool(p.get("confirmed")))
-        if rejection is not None:
-            return rejection
-
-        if not term.write((cmd + "\r").encode("utf-8")):
-            return {"text": f"Terminal {session_id} is no longer running.",
-                    "is_error": True}
-        time.sleep(0.8)
-        preview = term.snapshot(TERMINAL_READ_BYTES).strip()
-        return {
-            "text": (f"Sent to {session_id}: {cmd}\n\n"
-                     f"Current screen:\n{preview or '(nothing yet)'}"),
-            "is_error": False,
-        }
-
-    if name == "terminal_send":
-        data = str(p.get("data") or "")
-        if not data:
-            return {"text": "Missing 'data'.", "is_error": True}
-        # Not risk-gated, unlike terminal_run: these are keystrokes aimed at a
-        # program already running and visible to the user, where the value is
-        # immediacy (Ctrl+C, Ctrl+D). Starting commands is the gated path.
-        if not term.write(data.encode("utf-8")):
-            return {"text": f"Terminal {session_id} is no longer running.",
-                    "is_error": True}
-        return {"text": f"Sent {len(data)} byte(s) to {session_id}.",
-                "is_error": False}
-
-    if name == "terminal_read":
-        if term.closed:
-            return {"text": (f"Terminal {session_id} has exited "
-                             f"(code {term.exit_code})."), "is_error": True}
-        limit = _as_int(p.get("max_bytes"), TERMINAL_READ_BYTES)
-        limit = max(200, min(limit, 20000))
-        out = term.snapshot(limit).strip()
-        return {"text": out or "(terminal is blank)", "is_error": False}
-
-    if name == "terminal_close":
-        ok = TerminalManager.close(session_id)
-        return {"text": (f"Closed {session_id}." if ok
-                         else f"No such terminal: {session_id}"),
-                "is_error": not ok}
-
-    return {"text": f"Unknown terminal tool: {name}", "is_error": True}
+    return run_terminal_tool(name, params)
 
 
 def invoke_tool(session: MCPSession, name: str, params: dict,

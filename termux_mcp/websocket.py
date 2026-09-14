@@ -11,7 +11,7 @@ import time
 from urllib.parse import parse_qs, urlparse
 
 from .config import AUTH_TOKEN, AUTO_INPUT_INTERVAL, COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES, REQUIRE_AUTH
-from .terminal import TerminalManager
+from .terminal import TERMINAL_TOOLS, TerminalManager, run_terminal_tool
 from .utils import (encode_base64, expand_home, is_install_command,
                     is_safe_path, kill_process_group, require_int, shell_quote,
                     split_cd_chain)
@@ -919,6 +919,15 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         _ws_reply(sock, conn, req_id, {"killed": name})
         return
 
+    elif tool in TERMINAL_TOOLS:
+        result = run_terminal_tool(tool, p)
+        reply = {"output": result.get("text", ""),
+                 "is_error": bool(result.get("is_error"))}
+        if "terminal" in result:
+            reply["session"] = result["terminal"]
+        _ws_reply(sock, conn, req_id, reply)
+        return
+
     else:
         _ws_reply(sock, conn, req_id,{"error": f"Unknown tool: {tool}"})
         return
@@ -1078,8 +1087,6 @@ def pty_handler(sock, raw_headers: str, path: str = "") -> None:
         except Exception:
             pass
 
-    token = session.attach(send_output, send_exit)
-
     try:
         _send_frame(sock, conn, json.dumps({
             "type": "ready",
@@ -1089,12 +1096,13 @@ def pty_handler(sock, raw_headers: str, path: str = "") -> None:
             "rows": session.rows,
         }).encode())
     except Exception:
-        session.detach(token)
         try:
             sock.close()
         except Exception:
             pass
         return
+
+    token = session.attach(send_output, send_exit)
 
     try:
         while True:
