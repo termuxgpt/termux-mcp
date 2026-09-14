@@ -33,10 +33,19 @@ def _clean_registry():
 
 
 def _spawn_sleeper():
+    # start_new_session matches how the daemon spawns every command
+    # (shell.py passes preexec_fn=os.setsid), which is the whole reason
+    # cancel_active can signal the process *group* by pid.
+    #
+    # Without it the child sits in the test runner's group, so its pid is not
+    # a group id, os.killpg raises ProcessLookupError and cancel_active
+    # correctly reports False. Windows hid that for as long as it did because
+    # os.killpg does not exist there and the os.kill fallback succeeds.
     return subprocess.Popen(
         [sys.executable, "-c", "import time; time.sleep(60)"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        start_new_session=True,
     )
 
 
