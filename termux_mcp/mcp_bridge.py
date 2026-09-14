@@ -229,19 +229,19 @@ _MODULE_ROUTES = {
 }
 
 
-_ghost = None
-
-
-def _bound_method(name: str):
-    global _ghost
-    if _ghost is None:
-        _ghost = MCPHandler.__new__(MCPHandler)
-    return getattr(_ghost, name)
-
-
 def route_callable(tool_name: str):
+    """Return the callable for a bridged tool, as f(handler, params).
+
+    The instance routes return the *unbound* function, not a bound method.
+    ``invoke_tool`` calls every route as ``route(vh, p)``, passing a
+    VirtualHandler as the receiver — VirtualHandler implements wfile,
+    send_response, send_header and end_headers precisely so it can stand in
+    for the handler. Returning a method bound to a stand-in instance instead
+    gave a callable that took one argument, so every instance-routed tool
+    raised "takes 2 positional arguments but 3 were given" on every call.
+    """
     if tool_name in _INSTANCE_ROUTES:
-        return _bound_method(_INSTANCE_ROUTES[tool_name])
+        return getattr(MCPHandler, _INSTANCE_ROUTES[tool_name])
     if tool_name in _MODULE_ROUTES:
         return _MODULE_ROUTES[tool_name]
     return None
