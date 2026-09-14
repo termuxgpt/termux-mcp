@@ -67,6 +67,37 @@ def _constant_time_compare(a: str, b: str) -> bool:
 class MCPHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
+    # Set once a status line has gone out, so an error arriving later does not
+    # try to send a second response on the same connection.
+    _response_started = False
+
+    def send_response(self, code, message=None) -> None:
+        self._response_started = True
+        super().send_response(code, message)
+
+    def handle_one_request(self) -> None:
+        """Turn an unhandled handler error into a response, not a dropped socket.
+
+        require_number/require_int raise ValueError when a parameter is not a
+        number. Nothing caught that, so it escaped to BaseHTTPRequestHandler,
+        which logs it and closes the connection — a client sending one bad
+        parameter saw a network error rather than a reply, with nothing saying
+        which parameter was wrong. Since validation failures happen before any
+        output, there is still a clean moment to answer.
+
+        This also covers unexpected errors, which previously killed the
+        connection silently for exactly the same reason.
+        """
+        try:
+            super().handle_one_request()
+        except ValueError as e:
+            if not self._response_started:
+                json_response(self, 400, {"error": str(e)})
+        except Exception:
+            logger.exception("Unhandled error while serving %s", self.path)
+            if not self._response_started:
+                json_response(self, 500, {"error": "Internal error"})
+
     def log_message(self, fmt: str, *args) -> None:
         logger.debug("[HTTP] " + fmt, *args)
 
