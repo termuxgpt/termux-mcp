@@ -195,7 +195,32 @@ class MCPHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/cancel":
-            ok = cancel_active()
+            # Scoped by default. This used to signal every running pid, so any
+            # client could kill whatever any other client was running — a
+            # second caller's `pkg upgrade`, mid-install.
+            #
+            # HTTP carries no session identity, so a caller wanting to stop a
+            # specific command names it; `all: true` restores the old
+            # broadcast for callers that genuinely mean "stop everything".
+            # get_active_pid() is the common case: the one command running.
+            if data.get("all") is True:
+                ok = cancel_active()
+            else:
+                pid = data.get("pid")
+                if pid is None:
+                    pid = get_active_pid()
+                if pid is None:
+                    json_response(self, 200, {
+                        "cancelled": False,
+                        "reason": "nothing running",
+                    })
+                    return
+                try:
+                    pid = int(require_int(pid))
+                except ValueError as e:
+                    json_response(self, 400, {"error": str(e)})
+                    return
+                ok = cancel_active(pid)
             json_response(self,200, {"cancelled": ok})
             return
 

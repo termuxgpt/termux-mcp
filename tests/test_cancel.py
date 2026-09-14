@@ -134,3 +134,52 @@ def test_cancel_signals_the_group_where_the_platform_has_it():
             os.killpg(proc.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+
+
+def test_cancel_refuses_a_pid_the_daemon_did_not_start():
+    """Cancelling must not become a way to kill arbitrary processes.
+
+    The registry only holds commands this daemon started. Naming any other
+    pid has to be refused, or /cancel is a general-purpose kill.
+    """
+    victim = subprocess.Popen(
+        ["sh", "-c", "sleep 60"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        time.sleep(0.3)
+        assert shell.cancel_active(victim.pid) is False
+        time.sleep(0.3)
+        assert victim.poll() is None, "an unregistered pid was signalled"
+    finally:
+        victim.kill()
+        victim.wait(timeout=5)
+
+
+def test_cancel_with_a_pid_stops_only_that_command():
+    """A scoped cancel must leave other running commands alone."""
+    first = _spawn_sleeper()
+    second = _spawn_sleeper()
+    shell.register_active_pid(first.pid)
+    shell.register_active_pid(second.pid)
+    try:
+        assert shell.cancel_active(first.pid) is True
+        time.sleep(0.8)
+        assert first.poll() is not None, "the named command did not stop"
+        assert second.poll() is None, "an unrelated command was killed too"
+    finally:
+        for p in (first, second):
+            try:
+                # killpg is Unix-only; this suite also runs on Windows, where
+                # reaching for it raises AttributeError rather than OSError.
+                if hasattr(os, "killpg"):
+                    os.killpg(p.pid, signal.SIGKILL)
+                else:
+                    p.kill()
+            except (ProcessLookupError, OSError):
+                pass
+            try:
+                p.wait(timeout=5)
+            except Exception:
+                pass
