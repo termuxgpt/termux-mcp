@@ -46,6 +46,13 @@ WARNING_PATTERNS = [
     r'chmod\s+-R',                           # Recursive chmod
     r'find\s+.*-delete',                     # Find + delete
     r'>\s*/(?:bin|boot|etc|lib|opt|root|sbin|srv|sys|usr|var)(?:/|\s)',  # Redirect to system dirs
+    r'>>?[^|;&<>]*\.termux/',
+    r'>>?[^|;&<>]*\.bashrc',
+    r'>>?[^|;&<>]*\.bash_profile',
+    r'>>?[^|;&<>]*\.profile\b',
+    r'>>?[^|;&<>]*\.zshrc',
+    r'>>?[^|;&<>]*\.ssh/',
+    r'>>?[^|;&<>]*\.config/fish/',
     r'pkg\s+(?:uninstall|remove)\b',         # Removing packages — confirm first
     r'apt(?:-get)?\s+(?:remove|purge)\b',    # apt removals
     r'pip\s+(?:uninstall|remove)\b',         # pip removals

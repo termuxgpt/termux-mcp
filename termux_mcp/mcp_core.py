@@ -14,6 +14,7 @@ from .config import COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES
 from .safety import snapshot_targets_from_command
 from .security import get_risk_assessment
 from .shell import preprocess, set_current_dir
+from .styling import STYLE_TOOLS, run_style_tool
 from .terminal import interactive_program, run_terminal_tool
 from .utils import expand_home, kill_process_group, shell_quote, split_cd_chain
 from .websocket import _session_capture, _spawn_auto_input
@@ -216,6 +217,71 @@ NATIVE_TOOL_DEFS = [
                 "session": {"type": "string"},
             },
             "required": ["session"],
+        },
+    },
+
+    {
+        "name": "theme_list",
+        "description": (
+            "List the Termux colour themes that can be applied. Use this "
+            "first to find a name the user will recognise. Some names exist "
+            "as both dark and light."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "theme_apply",
+        "description": (
+            "Apply a colour theme to the user's Termux, changing how every "
+            "shell on the device looks. Returns the palette so the user can "
+            "see it. Needs confirmed: true — the first call returns a "
+            "confirmation request to put to the user."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "theme": {"type": "string", "description": "Theme name"},
+                "shade": {"type": "string",
+                          "description": "dark or light, when both exist"},
+                "confirmed": {"type": "boolean", "default": False},
+            },
+            "required": ["theme"],
+        },
+    },
+    {
+        "name": "theme_revert",
+        "description": (
+            "Undo a theme change: either restore the colours that were in "
+            "place before the last one, or go back to Termux's own defaults. "
+            "Needs confirmed: true."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "to": {"type": "string",
+                       "description": "'previous' (default) or 'default'",
+                       "default": "previous"},
+                "confirmed": {"type": "boolean", "default": False},
+            },
+        },
+    },
+    {
+        "name": "banner_render",
+        "description": (
+            "Render text as a large ASCII banner with figlet. Use this rather "
+            "than drawing the art yourself — the user sees the result "
+            "immediately, and it can then be written to the terminal's "
+            "message of the day."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string",
+                         "description": "Text to render, under 60 characters"},
+                "font": {"type": "string",
+                         "description": "figlet font name, optional"},
+            },
+            "required": ["text"],
         },
     },
 ]
@@ -585,6 +651,8 @@ def invoke_tool(session: MCPSession, name: str, params: dict,
                     return _tool_run(session, p)
                 if name.startswith("terminal_"):
                     return _tool_terminal(session, name, p)
+                if name in STYLE_TOOLS:
+                    return run_style_tool(name, p)
                 return _tool_session(session, name, p)
 
         route = mcp_bridge.route_callable(name)
