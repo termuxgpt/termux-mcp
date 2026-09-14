@@ -2,6 +2,7 @@ import io
 import json
 import os
 import sys
+import time
 import unittest
 from unittest import mock
 
@@ -9,6 +10,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+from termux_mcp import mcp_config as cfg
 from termux_mcp import mcp_core as core
 
 
@@ -140,7 +142,11 @@ class SessionRegistryTests(unittest.TestCase):
 
     def test_expiry(self):
         s = core.create_session("http")
-        s.last_used = 0
+        # Relative to now, not 0. last_used is a time.monotonic() reading and
+        # that clock counts from boot, so "0" only reads as long ago on a
+        # machine that has been up longer than the TTL — which a fresh CI
+        # runner has not.
+        s.last_used = time.monotonic() - (cfg.session_ttl() + 60)
         self.assertIsNone(core.get_session(s.sid))
         self.assertIsNone(core.get_session(s.sid, touch=False))
 
