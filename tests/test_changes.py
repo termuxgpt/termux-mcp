@@ -369,3 +369,56 @@ class TestSafetyWiring:
         assert open(path, encoding="utf-8").read() == "v1"
         changes.revert([changes.read(self.root)[0]], snapshot_before=None)
         assert open(path, encoding="utf-8").read() == "v2"
+
+
+class TestTaskIds:
+
+    def setup_method(self):
+        self.home = tempfile.mkdtemp(prefix="mcp-task-home-")
+        self.previous = safety.HOME
+        safety.HOME = self.home
+        self.root = os.path.join(self.home, "termuxGPT")
+
+    def teardown_method(self):
+        safety.HOME = self.previous
+        shutil.rmtree(self.home, ignore_errors=True)
+
+    def change(self, name, task_id):
+        path = os.path.join(self.home, name)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("before")
+        safety.snapshot_before_write(path, tool="write", task_id=task_id)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("after")
+        return path
+
+    def test_entries_come_back_for_one_task_only(self):
+        changes.record(self.root, changes.MODIFY, "/a", task_id="t1")
+        changes.record(self.root, changes.MODIFY, "/b", task_id="t2")
+        changes.record(self.root, changes.MODIFY, "/c", task_id="t1")
+        assert [e["path"] for e in changes.read(self.root, task="t1")] == ["/c", "/a"]
+        assert [e["path"] for e in changes.read(self.root, task="t2")] == ["/b"]
+
+    def test_an_entry_that_names_no_task_is_claimed_by_none(self):
+        changes.record(self.root, changes.MODIFY, "/a")
+        assert changes.read(self.root, task="t1") == []
+        assert len(changes.read(self.root)) == 1
+
+    def test_a_runaway_task_id_is_clipped(self):
+        changes.record(self.root, changes.MODIFY, "/a", task_id="x" * 200)
+        assert len(changes.read(self.root)[0]["task"]) == 64
+
+    def test_a_write_carries_the_task_from_the_transport(self):
+        self.change("one.txt", "t1")
+        entry = changes.read(self.root, task="t1")[0]
+        assert entry["path"].endswith("one.txt")
+        assert entry["kind"] == changes.MODIFY
+
+    def test_undoing_one_task_leaves_another_alone(self):
+        first = self.change("one.txt", "t1")
+        second = self.change("two.txt", "t2")
+        changes.revert(changes.read(self.root, task="t1"))
+        with open(first, encoding="utf-8") as handle:
+            assert handle.read() == "before"
+        with open(second, encoding="utf-8") as handle:
+            assert handle.read() == "after"

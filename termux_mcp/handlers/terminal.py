@@ -622,7 +622,8 @@ def handle_restore(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         root = safety_root("")
         entries = changes.read(root,
                                limit=_as_int(data.get("limit"), 50),
-                               since=str(data.get("since") or "").strip())
+                               since=str(data.get("since") or "").strip(),
+                               task=str(data.get("task_id") or "").strip())
         if str(data.get("format") or "").strip().lower() == "json":
             json_response(handler, 200, {
                 "changes": [dict(entry, revertable=changes.revertable(entry))
@@ -637,7 +638,8 @@ def handle_restore(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         wanted = str(data.get("path") or "").strip()
         entries = [e for e in changes.read(root,
                                            limit=_as_int(data.get("limit"), 50),
-                                           since=str(data.get("since") or "").strip())
+                                           since=str(data.get("since") or "").strip(),
+                                           task=str(data.get("task_id") or "").strip())
                    if changes.revertable(e)
                    and (not wanted or e.get("path") == wanted)]
         if not entries:

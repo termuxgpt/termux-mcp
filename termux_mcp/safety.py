@@ -69,7 +69,8 @@ def prune_old_dirs(root: str, keep: int) -> None:
             pass
 
 
-def snapshot_before_write(path: str, tool: str = "", cmd: str = "") -> Optional[str]:
+def snapshot_before_write(path: str, tool: str = "", cmd: str = "",
+                          task_id: str = "") -> Optional[str]:
     """Copy `path` to ~/termuxGPT/snapshots/<ts>/<rel> before it is
     overwritten. Returns the snapshot path, or None if there was nothing
     to protect (new file, missing, or already inside termuxGPT/)."""
@@ -77,7 +78,8 @@ def snapshot_before_write(path: str, tool: str = "", cmd: str = "") -> Optional[
     if inside_safety_area(path):
         return None  # never snapshot our own safety folders
     if not os.path.exists(path):
-        changes.record(root, changes.CREATE, path, tool=tool, cmd=cmd)
+        changes.record(root, changes.CREATE, path, tool=tool, cmd=cmd,
+                       task_id=task_id)
         return None
     # Microsecond ts: every write gets its own dir (second-resolution would
     # collapse rapid writes into one dir and defeat per-write pruning).
@@ -92,13 +94,14 @@ def snapshot_before_write(path: str, tool: str = "", cmd: str = "") -> Optional[
         shutil.copy2(path, snap)
         prune_old_dirs(safety_root("snapshots"), SNAPSHOT_KEEP)
         changes.record(root, changes.MODIFY, path, tool=tool, cmd=cmd,
-                       snapshot=snap)
+                       snapshot=snap, task_id=task_id)
         return snap
     except OSError:
         return None
 
 
-def trash_path(path: str, tool: str = "", cmd: str = "") -> Optional[str]:
+def trash_path(path: str, tool: str = "", cmd: str = "",
+               task_id: str = "") -> Optional[str]:
     """Move `path` into ~/termuxGPT/trash/<ts>/ instead of deleting it.
     Returns the trashed destination, or None on failure."""
     root = safety_root("")
@@ -114,7 +117,7 @@ def trash_path(path: str, tool: str = "", cmd: str = "") -> Optional[str]:
         shutil.move(path, dest)
         prune_old_dirs(os.path.join(root, "trash"), SNAPSHOT_KEEP)
         changes.record(root, changes.DELETE, path, tool=tool, cmd=cmd,
-                       trash=dest)
+                       trash=dest, task_id=task_id)
         return dest
     except OSError:
         return None
@@ -164,7 +167,7 @@ def _is_black_hole(path: str) -> bool:
     )
 
 
-def snapshot_targets_from_command(cmd: str) -> List[str]:
+def snapshot_targets_from_command(cmd: str, task_id: str = "") -> List[str]:
     """Best-effort detection of files a shell command may overwrite.
     Returns the snapshot paths actually taken (existing regular files)."""
     targets = set()
@@ -204,7 +207,8 @@ def snapshot_targets_from_command(cmd: str) -> List[str]:
 
     snaps = []
     for path in sorted(targets):
-        snap = snapshot_before_write(path, tool="run", cmd=cmd)
+        snap = snapshot_before_write(path, tool="run", cmd=cmd,
+                                         task_id=task_id)
         if snap:
             snaps.append(snap)
     return snaps

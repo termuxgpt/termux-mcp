@@ -389,7 +389,8 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         if not is_safe_path(path):
             _ws_reply(sock, conn, req_id,{"error": "Path not allowed"})
             return
-        snapshot_before_write(path, tool="write")
+        snapshot_before_write(path, tool="write",
+                                  task_id=p.get("task_id", ""))
         encoded = encode_base64(content)
         cmd = (f'mkdir -p "$(dirname {shell_quote(path)})" 2>/dev/null; '
                f'echo {shell_quote(encoded)} | base64 -d > {shell_quote(path)} && '
@@ -407,7 +408,8 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         if not path or not is_safe_path(path):
             _ws_reply(sock, conn, req_id,{"error": "Invalid path"})
             return
-        dest = trash_path(path, tool="delete")
+        dest = trash_path(path, tool="delete",
+                          task_id=p.get("task_id", ""))
         if req_id is not None:
             _ws_reply(sock, conn, req_id, {
                 "output": (f"Deleted: {path}\nMoved to: {dest}" if dest

@@ -619,7 +619,7 @@ class MCPHandler(BaseHTTPRequestHandler):
         # File safety: shell commands can overwrite real files (redirects,
         # sed -i, tee, cp/mv, truncate, dd of=...). Snapshot candidates
         # before running; echo the snapshot paths so the AI can diff/restore.
-        snaps = snapshot_targets_from_command(cmd)
+        snaps = snapshot_targets_from_command(cmd, data.get("task_id", ""))
         if snaps and not cmd.strip().startswith("cd"):
             hint = "; ".join(f"snapshot: {s}" for s in snaps)
             cmd = f"echo {shell_quote(hint)}; {cmd}"
@@ -688,7 +688,8 @@ class MCPHandler(BaseHTTPRequestHandler):
 
         # Safety: keep the previous version before overwriting. The snapshot
         # path is echoed to the client so the AI can diff/restore on request.
-        snap = snapshot_before_write(path, tool="write")
+        snap = snapshot_before_write(path, tool="write",
+                                     task_id=data.get("task_id", ""))
         snap_hint = f' snapshot: {shell_quote(snap)}' if snap else ''
         # base64 to avoid shell escaping issues, but sent over stdin rather
         # than in the command. As an argv element it hit MAX_ARG_STRLEN: the
@@ -734,7 +735,8 @@ class MCPHandler(BaseHTTPRequestHandler):
             json_response(self,403, {"error": "Path not allowed"})
             return
         # Safety: move to trash instead of destroying — recoverable.
-        trashed = trash_path(path, tool="delete")
+        trashed = trash_path(path, tool="delete",
+                             task_id=data.get("task_id", ""))
         if trashed:
             execute_streaming(self, f'echo Moved to trash: {shell_quote(trashed)}')
         else:

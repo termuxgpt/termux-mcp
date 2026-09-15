@@ -33,11 +33,14 @@ def redact(cmd: str) -> str:
     return out
 
 def record(root: str, kind: str, path: str, *, tool: str = "",
-           cmd: str = "", snapshot: str = "", trash: str = "") -> None:
+           cmd: str = "", snapshot: str = "", trash: str = "",
+           task_id: str = "") -> None:
     entry = {"ts": datetime.datetime.now().isoformat(timespec="microseconds"),
              "kind": kind, "path": path}
     if tool:
         entry["tool"] = tool
+    if task_id:
+        entry["task"] = task_id[:64]
     if cmd:
         entry["cmd"] = redact(cmd)[:400]
     if snapshot:
@@ -68,7 +71,8 @@ def _trim(root: str) -> None:
     except OSError:
         pass
 
-def read(root: str, limit: int = 50, since: str = "") -> list:
+def read(root: str, limit: int = 50, since: str = "",
+         task: str = "") -> list:
     path = journal_path(root)
     if not os.path.exists(path):
         return []
@@ -84,6 +88,8 @@ def read(root: str, limit: int = 50, since: str = "") -> list:
                 except ValueError:
                     continue
                 if since and str(entry.get("ts", "")) < since:
+                    continue
+                if task and str(entry.get("task", "")) != task:
                     continue
                 entries.append(entry)
     except OSError:
