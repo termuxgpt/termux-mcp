@@ -153,6 +153,44 @@ class TestTools:
         assert result["is_error"]
         assert "No such theme" in result["text"]
 
+    def test_preview_a_list_of_themes(self):
+        result = run_style_tool(
+            "theme_preview", {"themes": ["dracula", "nord", "gruvbox"]})
+        assert not result["is_error"]
+        payloads = result["text"].split(styling.THEME_JSON_MARKER)[1:]
+        ids = [json.loads(p.strip().split("\n", 1)[0])["id"] for p in payloads]
+        assert ids == ["dracula", "nord", "gruvbox"]
+        assert result["text"].count("Nothing has been changed yet") == 3
+
+    def test_preview_list_is_the_same_as_one_at_a_time(self):
+        one = run_style_tool("theme_preview", {"theme": "dracula"})["text"]
+        many = run_style_tool("theme_preview", {"themes": ["dracula"]})["text"]
+        assert one == many
+
+    def test_preview_list_names_the_ones_it_could_not_find(self):
+        result = run_style_tool(
+            "theme_preview", {"themes": ["dracula", "definitely_not_a_theme"]})
+        assert not result["is_error"]
+        assert "Not found: definitely_not_a_theme." in result["text"]
+        assert result["text"].count(styling.THEME_JSON_MARKER) == 1
+
+    def test_preview_list_with_nothing_left_is_an_error(self):
+        result = run_style_tool("theme_preview", {"themes": ["nope", "also_nope"]})
+        assert result["is_error"]
+        assert "No such theme" in result["text"]
+
+    def test_preview_list_is_capped(self):
+        names = sorted({i for i, s in load_themes() if s == "dark"})
+        result = run_style_tool("theme_preview", {"themes": names})
+        assert result["text"].count(styling.THEME_JSON_MARKER) == \
+            styling.MAX_PREVIEWS
+        assert "left out" in result["text"]
+
+    def test_preview_list_accepts_a_comma_separated_string(self):
+        result = run_style_tool("theme_preview", {"themes": "nord, gruvbox"})
+        assert not result["is_error"]
+        assert result["text"].count(styling.THEME_JSON_MARKER) == 2
+
     def test_apply_requires_confirmation(self):
         result = run_style_tool("theme_apply", {"theme": "dracula"})
         assert not result["is_error"]

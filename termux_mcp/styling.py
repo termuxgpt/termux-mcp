@@ -22,6 +22,8 @@ _KEYS = ("background", "foreground", "cursor") + tuple(
 _DEFAULT_BG = "#000000"
 _DEFAULT_FG = "#ffffff"
 
+MAX_PREVIEWS = 8
+
 _cache = None
 
 
@@ -98,13 +100,28 @@ def _theme_json(theme: dict) -> str:
     return THEME_JSON_MARKER + json.dumps(theme, separators=(",", ":"))
 
 
-def _no_such_theme(wanted: str) -> str:
+def _probe(name) -> str:
+    return str(name or "").strip().lower().replace(" ", "_")
+
+
+def _close_hint(probe: str) -> str:
     themes = load_themes()
-    probe = str(wanted or "").strip().lower().replace(" ", "_")
     close = sorted({i for i, _ in themes if probe and probe in i})[:8]
-    hint = (f" Closest: {', '.join(close)}." if close
-            else " Try theme_list.")
-    return f"No such theme: {probe}.{hint}"
+    return f" Closest: {', '.join(close)}." if close else " Try theme_list."
+
+
+def _no_such_theme(wanted: str) -> str:
+    probe = _probe(wanted)
+    return f"No such theme: {probe}.{_close_hint(probe)}"
+
+
+def _preview_text(theme: dict) -> str:
+    return (f"{theme['name']} ({theme['shade']}) — "
+            f"{len(theme['colors'])} colours, background "
+            f"{theme['background']}, foreground "
+            f"{theme['foreground']}. Nothing has been changed yet; "
+            "theme_apply puts it in place."
+            + "\n\n" + _theme_json(theme))
 
 
 def _needs_confirm(action: str, theme_id: str) -> str:
@@ -287,19 +304,38 @@ def run_style_tool(name: str, params: dict) -> dict:
         return {"text": "\n".join(lines), "is_error": False}
 
     if name == "theme_preview":
-        wanted = str(p.get("theme") or p.get("name") or "")
-        theme = find_theme(wanted, str(p.get("shade") or ""))
-        if theme is None:
-            return {"text": _no_such_theme(wanted), "is_error": True}
-        return {
-            "text": (f"{theme['name']} ({theme['shade']}) — "
-                     f"{len(theme['colors'])} colours, background "
-                     f"{theme['background']}, foreground "
-                     f"{theme['foreground']}. Nothing has been changed yet; "
-                     "theme_apply puts it in place."
-                     + "\n\n" + _theme_json(theme)),
-            "is_error": False,
-        }
+        shade = str(p.get("shade") or "")
+        asked = p.get("themes")
+        if isinstance(asked, str):
+            asked = asked.split(",")
+        if not isinstance(asked, (list, tuple)):
+            asked = [p.get("theme") or p.get("name") or ""]
+        names = [str(n).strip() for n in asked if str(n).strip()]
+        dropped = max(0, len(names) - MAX_PREVIEWS)
+        names = names[:MAX_PREVIEWS]
+        if not names:
+            return {"text": _no_such_theme(""), "is_error": True}
+
+        blocks, missing = [], []
+        for wanted in names:
+            theme = find_theme(wanted, shade)
+            if theme is None:
+                missing.append(wanted)
+            else:
+                blocks.append(_preview_text(theme))
+
+        if not blocks:
+            return {"text": _no_such_theme(names[0]), "is_error": True}
+
+        text = "\n\n".join(blocks)
+        if missing:
+            text += ("\n\nNot found: " + ", ".join(missing) + "."
+                     + _close_hint(_probe(missing[0])))
+        if dropped:
+            text += (f"\n\n{dropped} more name"
+                     f"{'' if dropped == 1 else 's'} were left out — "
+                     f"{MAX_PREVIEWS} preview at a time.")
+        return {"text": text, "is_error": False}
 
     if name == "theme_apply":
         wanted = str(p.get("theme") or p.get("name") or "")
