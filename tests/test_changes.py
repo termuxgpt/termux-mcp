@@ -210,7 +210,7 @@ class TestRedaction:
         finally:
             shutil.rmtree(root, ignore_errors=True)
 
-class TestRestoreActions:
+class TestChangesTools:
 
     def setup_method(self):
         self.home = tempfile.mkdtemp(prefix="mcp-restore-")
@@ -231,6 +231,18 @@ class TestRestoreActions:
             handle.write(after)
         return path
 
+    def list_changes(self, data):
+        from termux_mcp.handlers.terminal import handle_changes_list
+        handler = FakeHandler()
+        handle_changes_list(handler, data)
+        return handler
+
+    def undo(self, data):
+        from termux_mcp.handlers.terminal import handle_undo
+        handler = FakeHandler()
+        handle_undo(handler, data)
+        return handler
+
     def restore(self, data):
         from termux_mcp.handlers.terminal import handle_restore
         handler = FakeHandler()
@@ -239,11 +251,11 @@ class TestRestoreActions:
 
     def test_list_as_text_names_the_files(self):
         path = self.change("a.txt", "v1", "v2")
-        assert path in self.restore({"action": "list"}).text()
+        assert path in self.list_changes({}).text()
 
     def test_list_as_json_carries_the_structure(self):
         path = self.change("a.txt", "v1", "v2")
-        payload = self.restore({"action": "list", "format": "json"}).json()
+        payload = self.list_changes({"format": "json"}).json()
         entry = payload["changes"][0]
         assert entry["path"] == path
         assert entry["kind"] == changes.MODIFY
@@ -254,35 +266,41 @@ class TestRestoreActions:
         path = self.change("a.txt", "v1", "v2")
         for entry in changes.read(self.root):
             os.remove(entry["snapshot"])
-        payload = self.restore({"action": "list", "format": "json"}).json()
+        payload = self.list_changes({"format": "json"}).json()
         assert payload["changes"][0]["revertable"] is False
         assert path in payload["changes"][0]["path"]
 
     def test_revert_asks_for_confirmation_before_touching_anything(self):
         path = self.change("a.txt", "v1", "v2")
-        response = self.restore({"action": "revert"})
+        response = self.undo({})
         assert response.json()["requires_confirmation"] is True
         assert open(path, encoding="utf-8").read() == "v2"
 
     def test_revert_puts_the_file_back_once_confirmed(self):
         path = self.change("a.txt", "v1", "v2")
-        response = self.restore({"action": "revert", "confirmed": True})
+        response = self.undo({"confirmed": True})
         assert open(path, encoding="utf-8").read() == "v1"
         assert "restored" in response.text()
 
     def test_revert_can_name_one_file(self):
         first = self.change("a.txt", "a1", "a2")
         second = self.change("b.txt", "b1", "b2")
-        self.restore({"action": "revert", "path": first, "confirmed": True})
+        self.undo({"path": first, "confirmed": True})
         assert open(first, encoding="utf-8").read() == "a1"
         assert open(second, encoding="utf-8").read() == "b2"
 
-    def test_reverting_nothing_says_so(self):
-        assert "Nothing to revert" in self.restore({"action": "revert"}).text()
+    def test_undoing_nothing_says_so(self):
+        assert "Nothing to undo" in self.undo({}).text()
 
-    def test_the_backup_restore_still_needs_its_file(self):
+    def test_the_backup_restore_needs_its_file_and_nothing_else(self):
         response = self.restore({"target": "home"})
         assert response.status == 400
+        assert "file" in response.json()["error"]
+
+    def test_the_two_tools_are_separate_jobs(self):
+        path = self.change("a.txt", "v1", "v2")
+        assert path in self.list_changes({}).text()
+        assert self.restore({"file": path}).status in (200, 400)
 
 class TestSafetyWiring:
 
