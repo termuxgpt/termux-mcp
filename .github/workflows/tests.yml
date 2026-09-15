@@ -1,0 +1,32 @@
+name: tests
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: install test dependencies
+        run: pip install pytest
+
+      - name: unit tests
+        run: python -m pytest tests -q
+
+      - name: every version agrees
+        run: python scripts/check_versions.py
+
+      # Rebuilt here rather than byte-compared: the archive carries its own
+      # timestamps, so two builds of the same source are never identical.
+      - name: the apt package can be rebuilt for this version
+        run: python scripts/build_deb.py && python scripts/check_versions.py

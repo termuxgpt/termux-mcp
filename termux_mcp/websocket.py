@@ -413,10 +413,11 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         # nothing either. Done here rather than in the shell because `rm` has
         # no undo.
         dest = trash_path(path, tool="delete")
-        _ws_reply(sock, conn, req_id, {
-            "output": (f"Deleted: {path}\nMoved to: {dest}" if dest
-                       else f"Failed to delete: {path}"),
-        })
+        if req_id is not None:
+            _ws_reply(sock, conn, req_id, {
+                "output": (f"Deleted: {path}\nMoved to: {dest}" if dest
+                           else f"Failed to delete: {path}"),
+            })
         return
 
     elif tool == "search":
