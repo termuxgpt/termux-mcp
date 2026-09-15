@@ -37,13 +37,6 @@ def safety_root(*parts: str) -> str:
 
 
 def inside_safety_area(path: str) -> bool:
-    """True if `path` is the safety area or below it, however it is spelled.
-
-    Resolved on both sides: `~/termuxGPT/x`, `/home/…/termuxGPT/x`, a path with
-    `..` in it and a Windows path written with forward slashes all name the same
-    place, and comparing the strings let each of those past the guard — the one
-    check that must not have an escape.
-    """
     try:
         real = os.path.realpath(path).replace("\\", "/")
         root = os.path.realpath(safety_root("")).replace("\\", "/").rstrip("/")
@@ -53,8 +46,6 @@ def inside_safety_area(path: str) -> bool:
 
 
 def prune_old_dirs(root: str, keep: int) -> None:
-    """Keep the newest `keep` timestamped dirs under `root`, plus everything
-    from the last SNAPSHOT_KEEP_HOURS, capped at SNAPSHOT_KEEP_MAX."""
     dirs = sorted(glob.glob(os.path.join(root, "*")))
     cutoff = datetime.datetime.now() - datetime.timedelta(
         hours=SNAPSHOT_KEEP_HOURS)

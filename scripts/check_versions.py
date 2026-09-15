@@ -1,13 +1,3 @@
-"""Every place the version is written must agree.
-
-They drifted: pyproject.toml and termux_mcp/__init__.py said 0.11.2 while
-Packages and the .deb still advertised 0.11.1, so `apt install termux-mcp`
-and `pip install termux-mcp` would have installed different builds under the
-same idea of "latest". The publish workflow refuses a tag that disagrees with
-the Python files; nothing was watching the Debian side.
-
-Run: python scripts/check_versions.py
-"""
 
 import pathlib
 import re
@@ -16,17 +6,14 @@ import tomllib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-
 def pyproject_version() -> str:
     with open(ROOT / "pyproject.toml", "rb") as handle:
         return tomllib.load(handle)["project"]["version"]
-
 
 def init_version() -> str:
     text = (ROOT / "termux_mcp" / "__init__.py").read_text(encoding="utf-8")
     match = re.search(r'^__version__\s*=\s*["\']([^"\']+)', text, re.MULTILINE)
     return match.group(1) if match else ""
-
 
 def packages_version() -> str:
     path = ROOT / "Packages"
@@ -36,7 +23,6 @@ def packages_version() -> str:
                       re.MULTILINE)
     return match.group(1) if match else ""
 
-
 def packages_filename() -> str:
     path = ROOT / "Packages"
     if not path.exists():
@@ -44,7 +30,6 @@ def packages_filename() -> str:
     match = re.search(r"^Filename:\s*\./(\S+)", path.read_text(encoding="utf-8"),
                       re.MULTILINE)
     return match.group(1) if match else ""
-
 
 def main() -> int:
     versions = {
@@ -80,7 +65,6 @@ def main() -> int:
     print(f"versions agree: {next(iter(agreed))} "
           f"(pyproject, __init__, Packages, {deb or 'no deb'})")
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -389,8 +389,6 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         if not is_safe_path(path):
             _ws_reply(sock, conn, req_id,{"error": "Path not allowed"})
             return
-        # The app prefers this transport, so a snapshot skipped here is a
-        # snapshot skipped for most writes the product ever makes.
         snapshot_before_write(path, tool="write")
         encoded = encode_base64(content)
         cmd = (f'mkdir -p "$(dirname {shell_quote(path)})" 2>/dev/null; '
@@ -409,9 +407,6 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         if not path or not is_safe_path(path):
             _ws_reply(sock, conn, req_id,{"error": "Invalid path"})
             return
-        # Moved to the trash rather than removed, so this transport destroys
-        # nothing either. Done here rather than in the shell because `rm` has
-        # no undo.
         dest = trash_path(path, tool="delete")
         if req_id is not None:
             _ws_reply(sock, conn, req_id, {

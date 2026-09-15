@@ -1,11 +1,3 @@
-"""The same operation must leave the same record, whichever transport ran it.
-
-The app prefers WebSocket, so a safety rule enforced only on the REST path is
-a rule that does not apply to most of what the product does. That was true: the
-WebSocket write ran `base64 -d > path` with no snapshot, and its delete ran
-`rm -rf`, while the REST handlers snapshotted and trashed. These tests hold the
-two sides together, and the command runner is stubbed so nothing executes.
-"""
 
 import os
 import shutil
@@ -17,14 +9,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from termux_mcp import changes, safety, websocket
 
-
 class FakeSock:
     def __init__(self):
         self.sent = []
 
     def sendall(self, data):
         self.sent.append(data)
-
 
 class TestWebSocketParity:
 
