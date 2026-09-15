@@ -11,6 +11,7 @@ import time
 from urllib.parse import parse_qs, urlparse
 
 from .config import AUTH_TOKEN, AUTO_INPUT_INTERVAL, COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES, REQUIRE_AUTH
+from .safety import snapshot_before_write, trash_path
 from .styling import STYLE_TOOLS, run_style_tool
 from .terminal import TERMINAL_TOOLS, TerminalManager, run_terminal_tool
 from .utils import (encode_base64, expand_home, is_install_command,
@@ -388,6 +389,9 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         if not is_safe_path(path):
             _ws_reply(sock, conn, req_id,{"error": "Path not allowed"})
             return
+        # The app prefers this transport, so a snapshot skipped here is a
+        # snapshot skipped for most writes the product ever makes.
+        snapshot_before_write(path, tool="write")
         encoded = encode_base64(content)
         cmd = (f'mkdir -p "$(dirname {shell_quote(path)})" 2>/dev/null; '
                f'echo {shell_quote(encoded)} | base64 -d > {shell_quote(path)} && '
@@ -402,12 +406,18 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
 
     elif tool == "delete":
         path = p.get("path", "")
-        recursive = p.get("recursive", False)
         if not path or not is_safe_path(path):
             _ws_reply(sock, conn, req_id,{"error": "Invalid path"})
             return
-        flags = "-rf" if recursive else ""
-        cmd = f'rm {flags} {shell_quote(path)} 2>/dev/null && echo Deleted: {shell_quote(path)} || echo Failed to delete: {shell_quote(path)}'
+        # Moved to the trash rather than removed, so this transport destroys
+        # nothing either. Done here rather than in the shell because `rm` has
+        # no undo.
+        dest = trash_path(path, tool="delete")
+        _ws_reply(sock, conn, req_id, {
+            "output": (f"Deleted: {path}\nMoved to: {dest}" if dest
+                       else f"Failed to delete: {path}"),
+        })
+        return
 
     elif tool == "search":
         path = p.get("path") or "."

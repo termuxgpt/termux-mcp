@@ -164,6 +164,64 @@ class FakeHandler:
         return json.loads(self.text())
 
 
+class TestRedaction:
+    """The journal is read back into the app, the model and the receipt.
+
+    A command can carry a credential inline, and this file outlives the task —
+    so what gets written is the command with its secrets taken out, still
+    recognisable, never usable.
+    """
+
+    def test_bearer_tokens_go(self):
+        out = changes.redact('curl -H "Authorization: Bearer sk-abc123" https://x/y')
+        assert "sk-abc123" not in out
+        assert "curl" in out and "https://x/y" in out
+
+    def test_key_value_secrets_go(self):
+        for raw in ["curl https://x?token=abc123",
+                    "export API_KEY=abc123",
+                    "mysql --password hunter2",
+                    "deploy --token abc123"]:
+            out = changes.redact(raw)
+            assert "abc123" not in out, raw
+            assert "hunter2" not in out, raw
+
+    def test_a_password_flag_goes_where_it_can_only_be_one(self):
+        out = changes.redact("sshpass -p hunter2 ssh root@host")
+        assert "hunter2" not in out
+        assert "ssh root@host" in out
+        out = changes.redact("curl -u alice:s3cret https://x/y")
+        assert "s3cret" not in out
+        assert "https://x/y" in out
+
+    def test_a_flag_that_is_not_a_secret_is_left_where_it_is(self):
+        # `-p` is a path for mkdir, a port for ssh, and only a password for
+        # sshpass. Redacting it everywhere would ruin the ordinary command.
+        for raw in ["mkdir -p ~/a/b", "ssh -p 2222 root@host", "ls -la"]:
+            assert changes.redact(raw) == raw, raw
+
+    def test_credentials_in_a_url_go(self):
+        out = changes.redact("git clone https://user:ghp_secret@github.com/a/b")
+        assert "ghp_secret" not in out
+        assert "github.com/a/b" in out
+
+    def test_an_honest_command_is_left_alone(self):
+        for raw in ["sed -i s/a/b/ notes.txt", "ls -la ~/projects",
+                    "pkg install python -y"]:
+            assert changes.redact(raw) == raw
+
+    def test_the_journal_stores_the_redacted_form(self):
+        root = tempfile.mkdtemp(prefix="mcp-redact-")
+        try:
+            changes.record(root, changes.MODIFY, "/x",
+                           cmd='sshpass -p hunter2 ssh root@host')
+            stored = changes.read(root)[0]["cmd"]
+            assert "hunter2" not in stored
+            assert "ssh root@host" in stored
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+
 class TestRestoreActions:
 
     def setup_method(self):

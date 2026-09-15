@@ -1,6 +1,7 @@
 import datetime
 import json
 import os
+import re
 import shutil
 
 JOURNAL_KEEP = 2000
@@ -15,6 +16,37 @@ def journal_path(root: str) -> str:
     return os.path.join(root, "changes.jsonl")
 
 
+_CREDENTIAL_PATTERNS = (
+    (re.compile(r"(?i)\b(bearer)\s+\S+"), r"\1 ***"),
+    (re.compile(r"(?i)\b(authorization)\b\s*[:=]?\s*\S+"), r"\1 ***"),
+    (re.compile(r"(?i)\b(token|api[_-]?key|apikey|password|passwd|secret)"
+                r"\b\s*[:=]\s*\S+"), r"\1=***"),
+    (re.compile(r"(?i)(--?(?:password|token|api[_-]?key|secret))\s+\S+"),
+     r"\1 ***"),
+    (re.compile(r"://[^/\s:@]+:[^/\s@]+@"), "://***:***@"),
+    # Only the flags that mean a secret and nothing else. A bare `-p` is a
+    # port in ssh, a path in mkdir and a password in sshpass, so redacting it
+    # everywhere would turn `mkdir -p a/b` into nonsense.
+    (re.compile(r"(?i)\b(sshpass\s+-p)\s+\S+"), r"\1 ***"),
+    (re.compile(r"(?i)(\s-u\s+)\S+:\S+"), r"\1***:***"),
+)
+
+
+def redact(cmd: str) -> str:
+    """A command with its credentials replaced by asterisks.
+
+    The journal is read back into the app, the model and the receipt, and a
+    command can carry a credential inline — `curl -H "Authorization: Bearer …"`
+    is an ordinary thing to run. Recording it verbatim would put that secret in
+    a file that outlives the task, in a screen someone might screenshot, and in
+    a prompt. The command is still recognisable without its secret.
+    """
+    out = cmd
+    for pattern, replacement in _CREDENTIAL_PATTERNS:
+        out = pattern.sub(replacement, out)
+    return out
+
+
 def record(root: str, kind: str, path: str, *, tool: str = "",
            cmd: str = "", snapshot: str = "", trash: str = "") -> None:
     entry = {"ts": datetime.datetime.now().isoformat(timespec="microseconds"),
@@ -22,7 +54,7 @@ def record(root: str, kind: str, path: str, *, tool: str = "",
     if tool:
         entry["tool"] = tool
     if cmd:
-        entry["cmd"] = cmd[:400]
+        entry["cmd"] = redact(cmd)[:400]
     if snapshot:
         entry["snapshot"] = snapshot
     if trash:
