@@ -8,7 +8,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from termux_mcp import changes, safety
 
-
 class TestJournal:
 
     def setup_method(self):
@@ -133,7 +132,6 @@ class TestJournal:
         finally:
             changes.JOURNAL_MAX_BYTES = original
 
-
 class FakeHandler:
 
     def __init__(self):
@@ -163,14 +161,7 @@ class FakeHandler:
     def json(self):
         return json.loads(self.text())
 
-
 class TestRedaction:
-    """The journal is read back into the app, the model and the receipt.
-
-    A command can carry a credential inline, and this file outlives the task —
-    so what gets written is the command with its secrets taken out, still
-    recognisable, never usable.
-    """
 
     def test_bearer_tokens_go(self):
         out = changes.redact('curl -H "Authorization: Bearer sk-abc123" https://x/y')
@@ -195,8 +186,6 @@ class TestRedaction:
         assert "https://x/y" in out
 
     def test_a_flag_that_is_not_a_secret_is_left_where_it_is(self):
-        # `-p` is a path for mkdir, a port for ssh, and only a password for
-        # sshpass. Redacting it everywhere would ruin the ordinary command.
         for raw in ["mkdir -p ~/a/b", "ssh -p 2222 root@host", "ls -la"]:
             assert changes.redact(raw) == raw, raw
 
@@ -220,7 +209,6 @@ class TestRedaction:
             assert "ssh root@host" in stored
         finally:
             shutil.rmtree(root, ignore_errors=True)
-
 
 class TestRestoreActions:
 
@@ -295,7 +283,6 @@ class TestRestoreActions:
     def test_the_backup_restore_still_needs_its_file(self):
         response = self.restore({"target": "home"})
         assert response.status == 400
-
 
 class TestSafetyWiring:
 

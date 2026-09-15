@@ -11,10 +11,8 @@ CREATE = "create"
 MODIFY = "modify"
 DELETE = "delete"
 
-
 def journal_path(root: str) -> str:
     return os.path.join(root, "changes.jsonl")
-
 
 _CREDENTIAL_PATTERNS = (
     (re.compile(r"(?i)\b(bearer)\s+\S+"), r"\1 ***"),
@@ -24,28 +22,15 @@ _CREDENTIAL_PATTERNS = (
     (re.compile(r"(?i)(--?(?:password|token|api[_-]?key|secret))\s+\S+"),
      r"\1 ***"),
     (re.compile(r"://[^/\s:@]+:[^/\s@]+@"), "://***:***@"),
-    # Only the flags that mean a secret and nothing else. A bare `-p` is a
-    # port in ssh, a path in mkdir and a password in sshpass, so redacting it
-    # everywhere would turn `mkdir -p a/b` into nonsense.
     (re.compile(r"(?i)\b(sshpass\s+-p)\s+\S+"), r"\1 ***"),
     (re.compile(r"(?i)(\s-u\s+)\S+:\S+"), r"\1***:***"),
 )
 
-
 def redact(cmd: str) -> str:
-    """A command with its credentials replaced by asterisks.
-
-    The journal is read back into the app, the model and the receipt, and a
-    command can carry a credential inline — `curl -H "Authorization: Bearer …"`
-    is an ordinary thing to run. Recording it verbatim would put that secret in
-    a file that outlives the task, in a screen someone might screenshot, and in
-    a prompt. The command is still recognisable without its secret.
-    """
     out = cmd
     for pattern, replacement in _CREDENTIAL_PATTERNS:
         out = pattern.sub(replacement, out)
     return out
-
 
 def record(root: str, kind: str, path: str, *, tool: str = "",
            cmd: str = "", snapshot: str = "", trash: str = "") -> None:
@@ -67,7 +52,6 @@ def record(root: str, kind: str, path: str, *, tool: str = "",
     except OSError:
         pass
 
-
 def _trim(root: str) -> None:
     path = journal_path(root)
     try:
@@ -83,7 +67,6 @@ def _trim(root: str) -> None:
         os.replace(tmp, path)
     except OSError:
         pass
-
 
 def read(root: str, limit: int = 50, since: str = "") -> list:
     path = journal_path(root)
@@ -108,7 +91,6 @@ def read(root: str, limit: int = 50, since: str = "") -> list:
     entries.reverse()
     return entries[:limit] if limit else entries
 
-
 def revertable(entry: dict) -> bool:
     kind = entry.get("kind")
     if kind == CREATE:
@@ -118,7 +100,6 @@ def revertable(entry: dict) -> bool:
     if kind == DELETE:
         return bool(entry.get("trash")) and os.path.exists(entry["trash"])
     return False
-
 
 def revert(entries: list, snapshot_before=None) -> list:
     done = []
@@ -148,7 +129,6 @@ def revert(entries: list, snapshot_before=None) -> list:
         except OSError as error:
             done.append((path, f"failed: {error}"))
     return done
-
 
 def summarise(entries: list) -> str:
     if not entries:
