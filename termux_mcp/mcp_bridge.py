@@ -181,7 +181,7 @@ WS_ALIAS_DROPS = {"camera", "wifi", "sms", "tts", "ocr"}
 
 # Tools implemented directly in mcp_core.invoke_tool rather than routed to a
 # REST handler, which cannot express a long-lived session. Keep in sync with
-# NATIVE_TOOL_DEFS in mcp_core; tests/test_mcp_bridge.py enforces it.
+# NATIVE_TOOL_DEFS in mcp_core; tests/test_registry_drift.py enforces it.
 NATIVE_TOOL_NAMES = {"run", "cancel", "session_start", "session_run",
                      "session_poll", "session_list", "session_kill",
                      "terminal_open", "terminal_run", "terminal_send",
