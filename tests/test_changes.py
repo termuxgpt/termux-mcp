@@ -134,6 +134,111 @@ class TestJournal:
             changes.JOURNAL_MAX_BYTES = original
 
 
+class FakeHandler:
+
+    def __init__(self):
+        self.status = None
+        self.headers = {}
+        self.body = b""
+
+    def send_response(self, status):
+        self.status = status
+
+    def send_header(self, key, value):
+        self.headers[key.lower()] = value
+
+    def end_headers(self):
+        pass
+
+    def write(self, data):
+        self.body += data
+
+    @property
+    def wfile(self):
+        return self
+
+    def text(self):
+        return self.body.decode("utf-8")
+
+    def json(self):
+        return json.loads(self.text())
+
+
+class TestRestoreActions:
+
+    def setup_method(self):
+        self.home = tempfile.mkdtemp(prefix="mcp-restore-")
+        self.previous = safety.HOME
+        safety.HOME = self.home
+        self.root = os.path.join(self.home, "termuxGPT")
+
+    def teardown_method(self):
+        safety.HOME = self.previous
+        shutil.rmtree(self.home, ignore_errors=True)
+
+    def change(self, name, before, after):
+        path = os.path.join(self.home, name)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(before)
+        safety.snapshot_before_write(path, tool="write")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(after)
+        return path
+
+    def restore(self, data):
+        from termux_mcp.handlers.terminal import handle_restore
+        handler = FakeHandler()
+        handle_restore(handler, data)
+        return handler
+
+    def test_list_as_text_names_the_files(self):
+        path = self.change("a.txt", "v1", "v2")
+        assert path in self.restore({"action": "list"}).text()
+
+    def test_list_as_json_carries_the_structure(self):
+        path = self.change("a.txt", "v1", "v2")
+        payload = self.restore({"action": "list", "format": "json"}).json()
+        entry = payload["changes"][0]
+        assert entry["path"] == path
+        assert entry["kind"] == changes.MODIFY
+        assert entry["tool"] == "write"
+        assert entry["revertable"] is True
+
+    def test_json_marks_an_entry_whose_snapshot_is_gone(self):
+        path = self.change("a.txt", "v1", "v2")
+        for entry in changes.read(self.root):
+            os.remove(entry["snapshot"])
+        payload = self.restore({"action": "list", "format": "json"}).json()
+        assert payload["changes"][0]["revertable"] is False
+        assert path in payload["changes"][0]["path"]
+
+    def test_revert_asks_for_confirmation_before_touching_anything(self):
+        path = self.change("a.txt", "v1", "v2")
+        response = self.restore({"action": "revert"})
+        assert response.json()["requires_confirmation"] is True
+        assert open(path, encoding="utf-8").read() == "v2"
+
+    def test_revert_puts_the_file_back_once_confirmed(self):
+        path = self.change("a.txt", "v1", "v2")
+        response = self.restore({"action": "revert", "confirmed": True})
+        assert open(path, encoding="utf-8").read() == "v1"
+        assert "restored" in response.text()
+
+    def test_revert_can_name_one_file(self):
+        first = self.change("a.txt", "a1", "a2")
+        second = self.change("b.txt", "b1", "b2")
+        self.restore({"action": "revert", "path": first, "confirmed": True})
+        assert open(first, encoding="utf-8").read() == "a1"
+        assert open(second, encoding="utf-8").read() == "b2"
+
+    def test_reverting_nothing_says_so(self):
+        assert "Nothing to revert" in self.restore({"action": "revert"}).text()
+
+    def test_the_backup_restore_still_needs_its_file(self):
+        response = self.restore({"target": "home"})
+        assert response.status == 400
+
+
 class TestSafetyWiring:
 
     def setup_method(self):
