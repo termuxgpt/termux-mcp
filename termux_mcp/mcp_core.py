@@ -284,6 +284,34 @@ NATIVE_TOOL_DEFS = [
         },
     },
     {
+        "name": "font",
+        "description": (
+            "Preview terminal text styles — figlet and toilet fonts — by "
+            "drawing a sample word in them. action: \"list\" names what is "
+            "installed (optionally filtered with query); action: \"preview\" "
+            "draws the sample in one or more fonts so the user can choose. "
+            "Nothing is installed or changed and no real terminal font is "
+            "touched — this only draws. Put the chosen font name into "
+            "banner_render to use it."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string",
+                           "description": "'list' or 'preview'",
+                           "default": "preview"},
+                "text": {"type": "string",
+                         "description": "Sample to draw, under 40 characters"},
+                "fonts": {"type": "string",
+                          "description": "Comma-separated font names to draw"},
+                "query": {"type": "string",
+                          "description": "For action: list — filter by name"},
+                "filter": {"type": "string",
+                           "description": "toilet effect, e.g. metal, border, flip"},
+            },
+        },
+    },
+    {
         "name": "banner_render",
         "description": (
             "Render text as a large ASCII banner with figlet. Use this rather "
