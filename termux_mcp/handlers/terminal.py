@@ -616,49 +616,6 @@ def handle_backup(handler: "BaseHTTPRequestHandler", data: dict) -> None:
 
 
 def handle_restore(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    action = str(data.get("action") or "").strip().lower()
-
-    if action == "list":
-        root = safety_root("")
-        entries = changes.read(root,
-                               limit=_as_int(data.get("limit"), 50),
-                               since=str(data.get("since") or "").strip(),
-                               task=str(data.get("task_id") or "").strip())
-        if str(data.get("format") or "").strip().lower() == "json":
-            json_response(handler, 200, {
-                "changes": [dict(entry, revertable=changes.revertable(entry))
-                            for entry in entries],
-            })
-            return
-        _text_response(handler, changes.summarise(entries))
-        return
-
-    if action == "revert":
-        root = safety_root("")
-        wanted = str(data.get("path") or "").strip()
-        entries = [e for e in changes.read(root,
-                                           limit=_as_int(data.get("limit"), 50),
-                                           since=str(data.get("since") or "").strip(),
-                                           task=str(data.get("task_id") or "").strip())
-                   if changes.revertable(e)
-                   and (not wanted or e.get("path") == wanted)]
-        if not entries:
-            _text_response(handler, "Nothing to revert.")
-            return
-        if not data.get("confirmed"):
-            json_response(handler, 200, {
-                "status": "confirmation_required",
-                "requires_confirmation": True,
-                "paths": [e.get("path") for e in entries],
-                "message": (f"Putting {len(entries)} file(s) back to their "
-                            "earlier contents."),
-            })
-            return
-        done = changes.revert(entries, snapshot_before=snapshot_before_write)
-        body = "\n".join(f"{what}: {path}" for path, what in done)
-        _text_response(handler, f"Reverted {len(done)} file(s):\n{body}")
-        return
-
     backup_file = data.get("file", "").strip()
     target = data.get("target", "home").strip()
 
@@ -701,3 +658,44 @@ def handle_restore(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         cmd = 'echo "Targets: home, packages, configs, info"'
 
     execute_streaming(handler, cmd)
+
+
+def handle_changes_list(handler: "BaseHTTPRequestHandler", data: dict) -> None:
+    root = safety_root("")
+    entries = changes.read(root,
+                           limit=_as_int(data.get("limit"), 50),
+                           since=str(data.get("since") or "").strip(),
+                           task=str(data.get("task_id") or "").strip())
+    if str(data.get("format") or "").strip().lower() == "json":
+        json_response(handler, 200, {
+            "changes": [dict(entry, revertable=changes.revertable(entry))
+                        for entry in entries],
+        })
+        return
+    _text_response(handler, changes.summarise(entries))
+
+
+def handle_undo(handler: "BaseHTTPRequestHandler", data: dict) -> None:
+    root = safety_root("")
+    wanted = str(data.get("path") or "").strip()
+    entries = [e for e in changes.read(root,
+                                       limit=_as_int(data.get("limit"), 50),
+                                       since=str(data.get("since") or "").strip(),
+                                       task=str(data.get("task_id") or "").strip())
+               if changes.revertable(e)
+               and (not wanted or e.get("path") == wanted)]
+    if not entries:
+        _text_response(handler, "Nothing to undo.")
+        return
+    if not data.get("confirmed"):
+        json_response(handler, 200, {
+            "status": "confirmation_required",
+            "requires_confirmation": True,
+            "paths": [e.get("path") for e in entries],
+            "message": (f"Putting {len(entries)} file(s) back to their "
+                        "earlier contents."),
+        })
+        return
+    done = changes.revert(entries, snapshot_before=snapshot_before_write)
+    body = "\n".join(f"{what}: {path}" for path, what in done)
+    _text_response(handler, f"Undone {len(done)} file(s):\n{body}")

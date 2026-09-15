@@ -19,6 +19,7 @@ from .handlers.history import (
 )
 from .handlers.terminal import (
     handle_diagnose, handle_backup, handle_restore,
+    handle_changes_list, handle_undo,
 )
 from .tools_schema import OPENAI_TOOLS
 
@@ -223,6 +224,8 @@ _MODULE_ROUTES = {
     "git_pr": handle_git_pr,
     "backup": handle_backup,
     "restore": handle_restore,
+    "changes_list": handle_changes_list,
+    "undo": handle_undo,
     "recipe_list": handle_recipe_list,
     "recipe_run": handle_recipe_run,
     "recipe_save": handle_recipe_save,

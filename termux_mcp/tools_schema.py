@@ -275,19 +275,58 @@ OPENAI_TOOLS = [
         "type": "function",
         "function": {
             "name": "restore",
-            "description": "Restore from a backup file, or undo recent file changes. action \"list\" shows what changed (newest first) — every write and delete this server made, with when and by which tool. action \"revert\" puts those files back to their earlier contents: files modified are restored, files created are removed, files deleted come back from the trash. Revert needs confirmed: true.",
+            "description": "Restore from a backup file.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["list", "revert"], "description": "List or undo recent changes; omit to restore from a backup file"},
                     "file": {"type": "string", "description": "Backup file path"},
-                    "target": {"type": "string", "enum": ["home", "packages", "configs"], "description": "What to restore", "default": "home"},
-                    "limit": {"type": "integer", "description": "How many changes to list or undo", "default": 50},
+                    "target": {"type": "string", "enum": ["home", "packages", "configs"], "description": "What to restore", "default": "home"}
+                },
+                "required": ["file"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "changes_list",
+            "description": (
+                "What this server has changed recently: every file it wrote, "
+                "created or deleted, newest first, each with its time and the "
+                "tool that did it. Pass task_id to see one task's changes, or "
+                "since for a time. Use format \"json\" for structures. "
+                "Read-only."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "description": "How many to list", "default": 50},
                     "since": {"type": "string", "description": "Only changes after this time, e.g. 2026-09-15T08:00:00"},
-                    "path": {"type": "string", "description": "Restrict revert to one file"},
                     "task_id": {"type": "string", "description": "Only this task's changes"},
-                    "format": {"type": "string", "enum": ["text", "json"], "description": "Shape of the listing", "default": "text"},
-                    "confirmed": {"type": "boolean", "description": "Required for action: revert", "default": False}
+                    "format": {"type": "string", "enum": ["text", "json"], "description": "Shape of the listing", "default": "text"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "undo",
+            "description": (
+                "Put files back to their earlier contents: a modified file is "
+                "restored from the copy taken before it, a created file is "
+                "removed, a deleted file comes back from the trash. Narrows by "
+                "task_id, since, or a single path — undoing one task leaves "
+                "everything else alone. Needs confirmed: true."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {"type": "string", "description": "Undo one task's changes"},
+                    "since": {"type": "string", "description": "Undo changes after this time"},
+                    "limit": {"type": "integer", "description": "How many changes to undo", "default": 50},
+                    "path": {"type": "string", "description": "Undo one file"},
+                    "confirmed": {"type": "boolean", "description": "Required", "default": False}
                 }
             }
         }
