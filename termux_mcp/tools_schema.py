@@ -285,6 +285,7 @@ OPENAI_TOOLS = [
                     "limit": {"type": "integer", "description": "How many changes to list or undo", "default": 50},
                     "since": {"type": "string", "description": "Only changes after this time, e.g. 2026-09-15T08:00:00"},
                     "path": {"type": "string", "description": "Restrict revert to one file"},
+                    "task_id": {"type": "string", "description": "Only this task's changes"},
                     "format": {"type": "string", "enum": ["text", "json"], "description": "Shape of the listing", "default": "text"},
                     "confirmed": {"type": "boolean", "description": "Required for action: revert", "default": False}
                 }
