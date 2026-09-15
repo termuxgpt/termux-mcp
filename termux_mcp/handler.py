@@ -688,7 +688,7 @@ class MCPHandler(BaseHTTPRequestHandler):
 
         # Safety: keep the previous version before overwriting. The snapshot
         # path is echoed to the client so the AI can diff/restore on request.
-        snap = snapshot_before_write(path)
+        snap = snapshot_before_write(path, tool="write")
         snap_hint = f' snapshot: {shell_quote(snap)}' if snap else ''
         # base64 to avoid shell escaping issues, but sent over stdin rather
         # than in the command. As an argv element it hit MAX_ARG_STRLEN: the
@@ -734,7 +734,7 @@ class MCPHandler(BaseHTTPRequestHandler):
             json_response(self,403, {"error": "Path not allowed"})
             return
         # Safety: move to trash instead of destroying — recoverable.
-        trashed = trash_path(path)
+        trashed = trash_path(path, tool="delete")
         if trashed:
             execute_streaming(self, f'echo Moved to trash: {shell_quote(trashed)}')
         else:

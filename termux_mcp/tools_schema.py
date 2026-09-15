@@ -275,14 +275,17 @@ OPENAI_TOOLS = [
         "type": "function",
         "function": {
             "name": "restore",
-            "description": "Restore from a backup file.",
+            "description": "Restore from a backup file, or undo recent file changes. action \"list\" shows what changed (newest first) — every write and delete this server made, with when and by which tool. action \"revert\" puts those files back to their earlier contents: files modified are restored, files created are removed, files deleted come back from the trash. Revert needs confirmed: true.",
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "action": {"type": "string", "enum": ["list", "revert"], "description": "List or undo recent changes; omit to restore from a backup file"},
                     "file": {"type": "string", "description": "Backup file path"},
-                    "target": {"type": "string", "enum": ["home", "packages", "configs"], "description": "What to restore", "default": "home"}
-                },
-                "required": ["file"]
+                    "target": {"type": "string", "enum": ["home", "packages", "configs"], "description": "What to restore", "default": "home"},
+                    "limit": {"type": "integer", "description": "How many changes to list or undo", "default": 50},
+                    "since": {"type": "string", "description": "Only changes after this time, e.g. 2026-09-15T08:00:00"},
+                    "confirmed": {"type": "boolean", "description": "Required for action: revert", "default": False}
+                }
             }
         }
     },

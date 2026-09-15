@@ -188,7 +188,7 @@ def handle_patch(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     diff_file = shell_quote(os.path.join(tmp_dir(), "_mcp_patch.diff"))
 
     # Safety: keep the pre-patch version before the file is modified.
-    snap = snapshot_before_write(target)
+    snap = snapshot_before_write(target, tool="patch")
     prefix = f"echo {shell_quote(f'[snapshot: {snap}]')}; " if snap else ""
 
     # The diff arrives on stdin rather than in the command string: the whole

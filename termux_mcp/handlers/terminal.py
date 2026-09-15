@@ -1,8 +1,26 @@
 import os
 from typing import TYPE_CHECKING
 
+from .. import changes
+from ..safety import safety_root, snapshot_before_write
 from ..shell import execute_streaming, get_current_dir
 from ..utils import json_response, require_int, shell_quote
+
+
+def _as_int(value, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _text_response(handler, text: str) -> None:
+    body = text.encode("utf-8")
+    handler.send_response(200)
+    handler.send_header("Content-Type", "text/plain")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
 
 if TYPE_CHECKING:
     from http.server import BaseHTTPRequestHandler
@@ -598,6 +616,39 @@ def handle_backup(handler: "BaseHTTPRequestHandler", data: dict) -> None:
 
 
 def handle_restore(handler: "BaseHTTPRequestHandler", data: dict) -> None:
+    action = str(data.get("action") or "").strip().lower()
+
+    if action == "list":
+        root = safety_root("")
+        entries = changes.read(root,
+                               limit=_as_int(data.get("limit"), 50),
+                               since=str(data.get("since") or "").strip())
+        _text_response(handler, changes.summarise(entries))
+        return
+
+    if action == "revert":
+        root = safety_root("")
+        entries = [e for e in changes.read(root,
+                                           limit=_as_int(data.get("limit"), 50),
+                                           since=str(data.get("since") or "").strip())
+                   if changes.revertable(e)]
+        if not entries:
+            _text_response(handler, "Nothing to revert.")
+            return
+        if not data.get("confirmed"):
+            json_response(handler, 200, {
+                "status": "confirmation_required",
+                "requires_confirmation": True,
+                "paths": [e.get("path") for e in entries],
+                "message": (f"Putting {len(entries)} file(s) back to their "
+                            "earlier contents."),
+            })
+            return
+        done = changes.revert(entries, snapshot_before=snapshot_before_write)
+        body = "\n".join(f"{what}: {path}" for path, what in done)
+        _text_response(handler, f"Reverted {len(done)} file(s):\n{body}")
+        return
+
     backup_file = data.get("file", "").strip()
     target = data.get("target", "home").strip()
 
