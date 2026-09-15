@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -115,7 +116,7 @@ class TestTools:
     def test_only_the_style_tools(self):
         assert styling.STYLE_TOOLS == {
             "theme_list", "theme_preview", "theme_apply", "theme_revert",
-            "banner_render",
+            "font", "banner_render",
         }
 
     def test_list_reports_the_library(self):
@@ -183,3 +184,96 @@ class TestTools:
         assert "foreground=" not in body
         assert "background=" not in body
         assert "color0=" in body
+
+
+class TestFonts:
+    """The font tool draws; it must never install or change anything.
+
+    The renderer is mocked rather than run, so these hold on a machine with
+    neither figlet nor toilet — which is where they are written.
+    """
+
+    def test_parses_showfigfonts(self):
+        sample = ("standard  Sample text:\n\nbig  Sample:\n\n"
+                  "slant   Sample:\n")
+        assert styling._parse_figlet_fonts(sample) == ["big", "slant", "standard"]
+
+    def test_parsing_nothing_gives_nothing(self):
+        assert styling._parse_figlet_fonts("") is None
+        assert styling._parse_figlet_fonts("no fonts here") is None
+
+    def test_list_says_how_to_install_when_there_are_none(self):
+        with mock.patch.object(styling, "_figlet_fonts", return_value=None), \
+             mock.patch.object(styling, "_toilet_fonts", return_value=[]):
+            result = run_style_tool("font", {"action": "list"})
+        assert result["is_error"]
+        assert "pkg install figlet toilet" in result["text"]
+
+    def test_list_separates_the_two_libraries_and_filters(self):
+        with mock.patch.object(styling, "_figlet_fonts",
+                               return_value=["doom", "slant", "small"]), \
+             mock.patch.object(styling, "_toilet_fonts", return_value=["term"]):
+            all_fonts = run_style_tool("font", {"action": "list"})["text"]
+            filtered = run_style_tool("font", {"action": "list",
+                                               "query": "sla"})["text"]
+        assert "figlet (3):" in all_fonts and "toilet (1):" in all_fonts
+        assert "slant" in filtered
+        assert "doom" not in filtered
+        assert "1 of 3" in filtered
+
+    def test_a_query_that_matches_nothing_is_an_error(self):
+        with mock.patch.object(styling, "_figlet_fonts",
+                               return_value=["doom"]), \
+             mock.patch.object(styling, "_toilet_fonts", return_value=[]):
+            assert run_style_tool("font", {"action": "list",
+                                           "query": "zzz"})["is_error"]
+
+    def test_preview_labels_every_font(self):
+        with mock.patch.object(styling, "_render_font",
+                               return_value=("ART", None)):
+            result = run_style_tool("font", {"action": "preview", "text": "Hi",
+                                             "fonts": "big,slant"})
+        assert not result["is_error"]
+        assert "── big" in result["text"]
+        assert "── slant" in result["text"]
+        assert result["text"].count("ART") == 2
+
+    def test_preview_keeps_going_when_one_font_fails(self):
+        def fake(text, font, filter_=""):
+            return (None, f"no such font: {font}") if font == "nope" \
+                else ("ART", None)
+
+        with mock.patch.object(styling, "_render_font", side_effect=fake):
+            result = run_style_tool("font", {"action": "preview", "text": "Hi",
+                                             "fonts": "big,nope"})
+        assert "── big" in result["text"]
+        assert "skipped" in result["text"] and "nope" in result["text"]
+
+    def test_preview_with_no_font_named_draws_the_defaults(self):
+        seen = []
+
+        def fake(text, font, filter_=""):
+            seen.append((text, font))
+            return ("ART", None)
+
+        with mock.patch.object(styling, "_render_font", side_effect=fake):
+            run_style_tool("font", {"action": "preview"})
+        assert [f for _, f in seen] == list(styling._DEFAULT_SAMPLE_FONTS)
+        assert seen[0][0] == "Termux"
+
+    def test_preview_refuses_a_sample_too_wide_for_the_fonts(self):
+        result = run_style_tool("font", {"action": "preview", "text": "x" * 41})
+        assert result["is_error"]
+
+    def test_preview_renders_nothing_when_every_font_fails(self):
+        with mock.patch.object(styling, "_render_font",
+                               return_value=(None, "figlet is not installed")), \
+             mock.patch.object(styling, "_figlet_fonts", return_value=None):
+            result = run_style_tool("font", {"action": "preview", "text": "Hi"})
+        assert result["is_error"]
+        assert "not installed" in result["text"]
+
+    def test_unknown_action_is_refused(self):
+        result = run_style_tool("font", {"action": "install"})
+        assert result["is_error"]
+        assert "list or preview" in result["text"]

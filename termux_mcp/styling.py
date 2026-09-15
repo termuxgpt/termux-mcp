@@ -177,14 +177,86 @@ def _figlet(text: str, font: str):
     return art, None
 
 
+_FIGLET_FONT_LINE = re.compile(r"^(\S+)\s+.*:$", re.MULTILINE)
+
+# Classic figlet fonts, used when a preview is asked for without names. They
+# ship with figlet itself, and they look different enough from each other to be
+# worth choosing between.
+_DEFAULT_SAMPLE_FONTS = ("standard", "big", "slant", "shadow")
+
+
+def _parse_figlet_fonts(output: str):
+    """Font names out of `showfigfonts`' listing.
+
+    Each entry is the name, its sample, then a colon — so the name is the first
+    token of a line that ends in one. Split out from the call because this is
+    the part worth testing, and it needs neither figlet nor a device.
+    """
+    names = _FIGLET_FONT_LINE.findall(output or "")
+    return sorted(set(names)) if names else None
+
+
 def _figlet_fonts():
     try:
         done = subprocess.run(["showfigfonts"],
                               capture_output=True, text=True, timeout=15)
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return None
-    names = re.findall(r"^(\S+)\s+.*:$", done.stdout, re.MULTILINE)
-    return sorted(set(names)) if names else None
+    return _parse_figlet_fonts(done.stdout)
+
+
+TOILET_FONTS_DIR = os.path.join(
+    os.environ.get("PREFIX", "/data/data/com.termux/files/usr"),
+    "share", "toilet", "fonts")
+
+_TOILET_FONTS_CACHE = []
+
+
+def _toilet_fonts():
+    if _TOILET_FONTS_CACHE:
+        return _TOILET_FONTS_CACHE[0]
+    try:
+        names = sorted(f[:-4] for f in os.listdir(TOILET_FONTS_DIR)
+                       if f.endswith(".tlf"))
+    except OSError:
+        return []
+    _TOILET_FONTS_CACHE.append(names)
+    return names
+
+
+def _toilet(text: str, font: str = "", filter_: str = ""):
+    argv = ["toilet"]
+    if font:
+        argv += ["-f", font]
+    if filter_:
+        argv += ["-F", filter_]
+    argv.append(text)
+    try:
+        done = subprocess.run(argv, capture_output=True, text=True, timeout=15)
+    except FileNotFoundError:
+        return None, "toilet is not installed. Run: pkg install toilet"
+    except subprocess.TimeoutExpired:
+        return None, "toilet took too long."
+    if done.returncode != 0:
+        detail = (done.stderr or "").strip()
+        return None, detail or f"toilet exited {done.returncode}"
+    art = done.stdout.rstrip("\n")
+    if not art.strip():
+        return None, f"toilet produced nothing for that font: {font or 'default'}"
+    return art, None
+
+
+def _render_font(text: str, font: str, filter_: str = ""):
+    """Render with whichever tool owns that font name.
+
+    figlet and toilet keep separate font files in separate directories, so the
+    name decides the renderer: a name in toilet's set that figlet does not have
+    is a toilet font. A name in neither set still goes to figlet, because its
+    error names the problem better than a guess would.
+    """
+    if font and font not in (_figlet_fonts() or []) and font in _toilet_fonts():
+        return _toilet(text, font, filter_)
+    return _figlet(text, font)
 
 
 def run_style_tool(name: str, params: dict) -> dict:
@@ -304,6 +376,69 @@ def run_style_tool(name: str, params: dict) -> dict:
             "is_error": False,
         }
 
+    if name == "font":
+        action = str(p.get("action") or "preview").strip().lower()
+
+        if action == "list":
+            figlet = _figlet_fonts()
+            toilet = _toilet_fonts()
+            if not figlet and not toilet:
+                return {"text": "No fonts found. Run: pkg install figlet toilet",
+                        "is_error": True}
+            query = str(p.get("query") or "").strip().lower()
+            lines = []
+            for label, names in (("figlet", figlet or []),
+                                 ("toilet", toilet)):
+                hits = [n for n in names if query in n.lower()] if query else names
+                if not hits:
+                    continue
+                shown = hits[:40]
+                count = (f"{len(hits)} of {len(names)}" if query
+                         else str(len(names)))
+                lines.append(f"{label} ({count}): " + ", ".join(shown)
+                             + (", …" if len(hits) > len(shown) else ""))
+            if not lines:
+                return {"text": f"No font matches {query!r}. Use action: list "
+                                "with no query to see them all.",
+                        "is_error": True}
+            return {"text": "\n".join(lines), "is_error": False}
+
+        if action == "preview":
+            # Short by default: figlet fonts are wide, and a preview stacks
+            # several of them.
+            text = str(p.get("text") or p.get("sample") or "Termux").strip()
+            if len(text) > 40:
+                return {"text": "Keep the sample under 40 characters — these "
+                                "fonts are wide.", "is_error": True}
+            raw = p.get("fonts") or p.get("font") or ""
+            wanted = ([w.strip() for w in raw.split(",")]
+                      if isinstance(raw, str)
+                      else [str(w).strip() for w in raw])
+            wanted = [w for w in wanted if w][:6] or list(_DEFAULT_SAMPLE_FONTS)
+            filter_ = str(p.get("filter") or "").strip()
+
+            blocks, errors = [], []
+            for font in wanted:
+                art, error = _render_font(text, font, filter_)
+                if error:
+                    errors.append(f"{font}: {error}")
+                    continue
+                blocks.append(f"── {font} " + "─" * max(3, 22 - len(font))
+                              + f"\n{art}")
+            if not blocks:
+                figlet = _figlet_fonts()
+                hint = (f"\n\n{len(figlet)} figlet fonts are installed — "
+                        "action: list names them." if figlet else "")
+                return {"text": "Nothing rendered.\n"
+                                + "\n".join(errors[:3]) + hint,
+                        "is_error": True}
+            if errors:
+                blocks.append("(skipped — " + "; ".join(errors[:3]) + ")")
+            return {"text": "\n\n".join(blocks), "is_error": False}
+
+        return {"text": f"Unknown action: {action}. Use list or preview.",
+                "is_error": True}
+
     if name == "banner_render":
         text = str(p.get("text") or "").strip()
         if not text:
@@ -326,5 +461,5 @@ def run_style_tool(name: str, params: dict) -> dict:
 
 STYLE_TOOLS = frozenset({
     "theme_list", "theme_preview", "theme_apply", "theme_revert",
-    "banner_render",
+    "font", "banner_render",
 })
