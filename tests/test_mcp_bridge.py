@@ -127,15 +127,37 @@ class VirtualHandlerTests(unittest.TestCase):
         self.assertIn("all good", res["text"])
 
 
+TOOL_LIST_BUDGET_CHARS = 26_000
+SINGLE_TOOL_LIMIT_CHARS = 1_600
+
+
 class RegistryTests(unittest.TestCase):
     def test_names_unique_and_curated(self):
         tools = bridge.build_mcp_tool_list(core.NATIVE_TOOL_DEFS)
         names = [t["name"] for t in tools]
         self.assertEqual(len(names), len(set(names)))
-        self.assertGreater(len(names), 50)
-        self.assertLess(len(names), 70)
         for alias in ("camera", "wifi", "sms", "tts", "ocr"):
             self.assertNotIn(alias, names)
+
+    def test_the_whole_list_stays_within_its_budget(self):
+        tools = bridge.build_mcp_tool_list(core.NATIVE_TOOL_DEFS)
+        size = len(json.dumps({"tools": tools}))
+        self.assertLess(
+            size, TOOL_LIST_BUDGET_CHARS,
+            f"the tool list now costs {size} characters of every request "
+            f"(budget {TOOL_LIST_BUDGET_CHARS}). Room is not free: merge tools, "
+            "trim descriptions, or raise the budget deliberately — the number "
+            "was 21,737 across 69 tools when this guard replaced a count.")
+
+    def test_no_single_tool_eats_the_budget(self):
+        tools = bridge.build_mcp_tool_list(core.NATIVE_TOOL_DEFS)
+        for tool in tools:
+            size = len(json.dumps(tool))
+            self.assertLess(
+                size, SINGLE_TOOL_LIMIT_CHARS,
+                f"{tool['name']} alone is {size} characters (limit "
+                f"{SINGLE_TOOL_LIMIT_CHARS}). One verbose description should "
+                "not be able to spend the room a dozen tools would use.")
 
     def test_schemas_valid(self):
         tools = bridge.build_mcp_tool_list(core.NATIVE_TOOL_DEFS)
