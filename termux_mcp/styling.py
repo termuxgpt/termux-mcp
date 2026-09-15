@@ -314,7 +314,7 @@ def run_style_tool(name: str, params: dict) -> dict:
         try:
             os.makedirs(os.path.dirname(COLORS_PATH), exist_ok=True)
             if os.path.exists(COLORS_PATH):
-                snapshot_before_write(COLORS_PATH)
+                snapshot_before_write(COLORS_PATH, tool="theme_apply")
             with open(COLORS_PATH, "w", encoding="utf-8") as handle:
                 handle.write(_colors_body(theme))
         except OSError as e:
@@ -339,7 +339,7 @@ def run_style_tool(name: str, params: dict) -> dict:
         if not to_previous:
             if os.path.exists(COLORS_PATH):
                 try:
-                    snapshot_before_write(COLORS_PATH)
+                    snapshot_before_write(COLORS_PATH, tool="theme_revert")
                     os.remove(COLORS_PATH)
                 except OSError as e:
                     return {"text": f"Could not reset: {e}", "is_error": True}
@@ -363,7 +363,7 @@ def run_style_tool(name: str, params: dict) -> dict:
         try:
             os.makedirs(os.path.dirname(COLORS_PATH), exist_ok=True)
             if os.path.exists(COLORS_PATH):
-                snapshot_before_write(COLORS_PATH)
+                snapshot_before_write(COLORS_PATH, tool="theme_revert")
             shutil.copy2(snapshot, COLORS_PATH)
         except OSError as e:
             return {"text": f"Could not restore: {e}", "is_error": True}

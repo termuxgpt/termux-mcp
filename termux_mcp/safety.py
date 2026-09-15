@@ -20,10 +20,13 @@ import re
 import shutil
 from typing import List, Optional
 
+from . import changes
 from .config import HOME
 from .shell import get_current_dir
 
 SNAPSHOT_KEEP = 20  # newest snapshot dirs to retain
+SNAPSHOT_KEEP_HOURS = 24
+SNAPSHOT_KEEP_MAX = 200
 
 # /dev/null and friends — redirects to these are not file writes.
 _DEV_NULLISH = ("/dev/null", "/dev/stdin", "/dev/stdout", "/dev/stderr")
@@ -33,24 +36,58 @@ def safety_root(*parts: str) -> str:
     return os.path.join(HOME, "termuxGPT", *parts)
 
 
+def inside_safety_area(path: str) -> bool:
+    """True if `path` is the safety area or below it, however it is spelled.
+
+    Resolved on both sides: `~/termuxGPT/x`, `/home/…/termuxGPT/x`, a path with
+    `..` in it and a Windows path written with forward slashes all name the same
+    place, and comparing the strings let each of those past the guard — the one
+    check that must not have an escape.
+    """
+    try:
+        real = os.path.realpath(path).replace("\\", "/")
+        root = os.path.realpath(safety_root("")).replace("\\", "/").rstrip("/")
+    except (OSError, ValueError):
+        return True
+    return real == root or real.startswith(root + "/")
+
+
 def prune_old_dirs(root: str, keep: int) -> None:
-    """Keep the `keep` newest timestamped dirs under `root`, drop the rest."""
+    """Keep the newest `keep` timestamped dirs under `root`, plus everything
+    from the last SNAPSHOT_KEEP_HOURS, capped at SNAPSHOT_KEEP_MAX."""
     dirs = sorted(glob.glob(os.path.join(root, "*")))
-    for stale in dirs[:-keep]:
+    cutoff = datetime.datetime.now() - datetime.timedelta(
+        hours=SNAPSHOT_KEEP_HOURS)
+    alive = set(dirs[-keep:])
+    for path in dirs:
+        try:
+            made = datetime.datetime.strptime(os.path.basename(path),
+                                              "%Y%m%d-%H%M%S-%f")
+        except ValueError:
+            continue
+        if made >= cutoff:
+            alive.add(path)
+    kept = sorted(alive)
+    doomed = [d for d in dirs if d not in alive]
+    if len(kept) > SNAPSHOT_KEEP_MAX:
+        doomed += kept[:len(kept) - SNAPSHOT_KEEP_MAX]
+    for stale in doomed:
         try:
             shutil.rmtree(stale)
         except OSError:
             pass
 
 
-def snapshot_before_write(path: str) -> Optional[str]:
+def snapshot_before_write(path: str, tool: str = "", cmd: str = "") -> Optional[str]:
     """Copy `path` to ~/termuxGPT/snapshots/<ts>/<rel> before it is
     overwritten. Returns the snapshot path, or None if there was nothing
     to protect (new file, missing, or already inside termuxGPT/)."""
-    if not os.path.exists(path):
-        return None
-    if path.startswith(safety_root("")):
+    root = safety_root("")
+    if inside_safety_area(path):
         return None  # never snapshot our own safety folders
+    if not os.path.exists(path):
+        changes.record(root, changes.CREATE, path, tool=tool, cmd=cmd)
+        return None
     # Microsecond ts: every write gets its own dir (second-resolution would
     # collapse rapid writes into one dir and defeat per-write pruning).
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
@@ -63,25 +100,30 @@ def snapshot_before_write(path: str) -> Optional[str]:
         os.makedirs(os.path.dirname(snap), exist_ok=True)
         shutil.copy2(path, snap)
         prune_old_dirs(safety_root("snapshots"), SNAPSHOT_KEEP)
+        changes.record(root, changes.MODIFY, path, tool=tool, cmd=cmd,
+                       snapshot=snap)
         return snap
     except OSError:
         return None
 
 
-def trash_path(path: str) -> Optional[str]:
+def trash_path(path: str, tool: str = "", cmd: str = "") -> Optional[str]:
     """Move `path` into ~/termuxGPT/trash/<ts>/ instead of deleting it.
     Returns the trashed destination, or None on failure."""
+    root = safety_root("")
     if not os.path.exists(path):
         return None
-    if path.startswith(safety_root("")):
+    if inside_safety_area(path):
         return None
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-    trash = os.path.join(safety_root("trash"), ts)
+    trash = os.path.join(root, "trash", ts)
     try:
         os.makedirs(trash, exist_ok=True)
         dest = os.path.join(trash, os.path.basename(path))
         shutil.move(path, dest)
-        prune_old_dirs(safety_root("trash"), SNAPSHOT_KEEP)
+        prune_old_dirs(os.path.join(root, "trash"), SNAPSHOT_KEEP)
+        changes.record(root, changes.DELETE, path, tool=tool, cmd=cmd,
+                       trash=dest)
         return dest
     except OSError:
         return None
@@ -127,7 +169,7 @@ def _is_black_hole(path: str) -> bool:
     return (
         path in _DEV_NULLISH
         or path.startswith(("/dev/", "/proc/", "/sys/"))
-        or path.startswith(safety_root(""))
+        or inside_safety_area(path)
     )
 
 
@@ -171,7 +213,7 @@ def snapshot_targets_from_command(cmd: str) -> List[str]:
 
     snaps = []
     for path in sorted(targets):
-        snap = snapshot_before_write(path)
+        snap = snapshot_before_write(path, tool="run", cmd=cmd)
         if snap:
             snaps.append(snap)
     return snaps
