@@ -1,11 +1,14 @@
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from termux_mcp import changes
 from termux_mcp import playbook as pb
 
 
@@ -311,13 +314,21 @@ class TestRepair:
         assert run.call_count == 1
         assert result["runs"][0]["text"] == "boom"
 
-    def test_a_tool_step_is_not_run_yet(self):
-        playbook = _playbook(steps=[{"tool": "run", "with": {"cmd": "x"}}])
+    def test_a_fix_can_use_a_tool_step(self):
+        playbook = _playbook(steps=[{"tool": "changes_list",
+                                     "with": {"format": "json"}}])
         check = _check(fix={"playbook": "sample", "inputs": {"thing": "x"}})
-        with mock.patch("termux_mcp.shell.run_captured") as run:
-            result = pb.apply_fix(check, playbooks={"sample": playbook})
-        assert run.call_count == 0
-        assert "cannot run yet" in result["reason"]
+        with mock.patch("termux_mcp.mcp_bridge.route_callable",
+                        return_value=lambda handler, params: None):
+            with mock.patch("termux_mcp.mcp_bridge.decode_virtual",
+                            return_value={"text": "ok", "is_error": False}):
+                result = pb.apply_fix(check, playbooks={"sample": playbook})
+        assert result["applied"] is True
+
+    def test_a_native_tool_cannot_be_a_step(self):
+        result = pb.run_step({"tool": "session_run"})
+        assert result["ok"] is False
+        assert "native tool" in result["text"]
 
     def test_a_confirmation_that_is_refused_is_not_a_repair(self):
         check = _check(fix={"playbook": "sample", "inputs": {"thing": "x"}})
@@ -433,6 +444,260 @@ class TestDoctorFix:
                 report = pb.run_doctor(only=["git_present"])
         assert repair.call_count == 0
         assert report["repairs"] == []
+
+
+class TestSteps:
+
+    def test_a_run_step_goes_to_the_shell(self):
+        with mock.patch("termux_mcp.shell.run_captured",
+                        return_value={"ok": True}) as run:
+            pb.run_step({"run": "echo hi"}, confirmed=False, task_id="t")
+        assert run.call_args[0][0] == "echo hi"
+        assert run.call_args[1]["task_id"] == "t"
+
+    def test_a_tool_step_routes_through_the_bridge(self):
+        with mock.patch("termux_mcp.mcp_bridge.route_callable") as route:
+            route.return_value = lambda handler, params: None
+            with mock.patch("termux_mcp.mcp_bridge.decode_virtual",
+                            return_value={"text": "listed", "is_error": False}):
+                result = pb.run_step({"tool": "changes_list",
+                                      "with": {"format": "json"}})
+        assert result == {"ok": True, "reason": "", "text": "listed"}
+
+    def test_an_unknown_tool_says_so(self):
+        result = pb.run_step({"tool": "no_such_tool"})
+        assert result["ok"] is False
+        assert "No tool named" in result["text"]
+
+    def test_agreement_reaches_a_tool_step(self):
+        seen = {}
+
+        def fake_route(handler, params):
+            seen.update(params)
+
+        with mock.patch("termux_mcp.mcp_bridge.route_callable",
+                        return_value=fake_route):
+            with mock.patch("termux_mcp.mcp_bridge.decode_virtual",
+                            return_value={"text": "", "is_error": False}):
+                pb.run_step({"tool": "delete", "with": {"path": "/x"}},
+                            confirmed=True)
+        assert seen["confirmed"] is True
+
+    def test_a_step_that_says_nothing_does_not_run(self):
+        assert pb.run_step({})["ok"] is False
+
+
+class TestRunPlaybook:
+
+    def setup_method(self):
+        self.root = tempfile.mkdtemp(prefix="mcp-runs-")
+        self.runs = mock.patch("termux_mcp.playbook.runs_dir",
+                               return_value=self.root)
+        self.runs.start()
+
+    def teardown_method(self):
+        self.runs.stop()
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_dry_run_shows_the_work_and_does_nothing(self):
+        with mock.patch("termux_mcp.shell.run_captured") as run:
+            result = pb.run_playbook("clone_repo",
+                                     {"repo": "a/b"}, dry_run=True)
+        assert result["ok"] and result["dry_run"]
+        assert run.call_count == 0
+        assert result["steps"][0]["run"].startswith("test -d ~/b || git clone")
+        assert result["rollback"][0]["tool"] == "delete"
+
+    def test_a_run_reports_its_task_id_and_what_it_did(self):
+        with mock.patch("termux_mcp.playbook.repair",
+                        return_value={"check": "git_present",
+                                      "already_ok": True}):
+            with mock.patch("termux_mcp.shell.run_captured",
+                            return_value={"ok": True, "text": "cloned"}):
+                result = pb.run_playbook("clone_repo", {"repo": "a/b"})
+        assert result["ok"] is True
+        assert result["task_id"].startswith("clone_repo-")
+        assert result["success"] == "Cloned a/b into ~/b."
+        assert len(result["runs"]) == 2
+
+    def test_the_run_is_written_down(self):
+        with mock.patch("termux_mcp.playbook.repair",
+                        return_value={"check": "git_present",
+                                      "already_ok": True}):
+            with mock.patch("termux_mcp.shell.run_captured",
+                            return_value={"ok": True, "text": "cloned"}):
+                result = pb.run_playbook("clone_repo", {"repo": "a/b"})
+        record = pb.load_run(result["task_id"])
+        assert record["playbook"] == "clone_repo"
+        assert record["ok"] is True
+        assert record["rollback"]
+        assert record["undone"] is False
+
+    def test_a_failing_step_stops_the_run(self):
+        playbook = _playbook(steps=[{"run": "one"}, {"run": "two"}])
+        with mock.patch("termux_mcp.playbook.load_playbooks",
+                        return_value=({"sample": playbook}, [])):
+            with mock.patch("termux_mcp.shell.run_captured",
+                            return_value={"ok": False, "reason": "boom",
+                                          "text": "boom"}) as run:
+                result = pb.run_playbook("sample", {"thing": "x"})
+        assert result["ok"] is False
+        assert run.call_count == 1
+
+    def test_a_verification_that_does_not_hold_stops_the_run(self):
+        playbook = _playbook(steps=[{"run": "one", "verify": "nope"}])
+
+        def outcomes(cmd, confirmed=False, task_id=""):
+            return {"ok": cmd == "one", "text": "", "reason": ""}
+
+        with mock.patch("termux_mcp.playbook.load_playbooks",
+                        return_value=({"sample": playbook}, [])):
+            with mock.patch("termux_mcp.shell.run_captured",
+                            side_effect=outcomes):
+                result = pb.run_playbook("sample", {"thing": "x"})
+        assert result["ok"] is False
+        assert "did not hold" in result["errors"][0]
+
+    def test_an_unmet_requirement_stops_before_any_step(self):
+        with mock.patch("termux_mcp.playbook.repair",
+                        return_value={"check": "git_present",
+                                      "reason": "the network is down"}):
+            with mock.patch("termux_mcp.shell.run_captured") as run:
+                result = pb.run_playbook("clone_repo", {"repo": "a/b"})
+        assert result["ok"] is False
+        assert "git_present is not satisfied" in result["errors"][0]
+        assert run.call_count == 0
+
+    def test_a_requirement_that_was_repaired_is_reported(self):
+        with mock.patch("termux_mcp.playbook.repair",
+                        return_value={"check": "git_present", "fixed": True}):
+            with mock.patch("termux_mcp.shell.run_captured",
+                            return_value={"ok": True, "text": ""}):
+                result = pb.run_playbook("clone_repo", {"repo": "a/b"})
+        assert result["ok"] is True
+        assert result["requirements"][0]["fixed"] is True
+
+    def test_an_unknown_playbook(self):
+        assert pb.run_playbook("ghost")["ok"] is False
+
+    def test_missing_inputs_stop_it(self):
+        with mock.patch("termux_mcp.shell.run_captured") as run:
+            result = pb.run_playbook("clone_repo", {})
+        assert result["ok"] is False
+        assert run.call_count == 0
+
+
+class TestRunRecords:
+
+    def setup_method(self):
+        self.root = tempfile.mkdtemp(prefix="mcp-runs-")
+        self.runs = mock.patch("termux_mcp.playbook.runs_dir",
+                               return_value=self.root)
+        self.runs.start()
+
+    def teardown_method(self):
+        self.runs.stop()
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_save_and_load(self):
+        pb.save_run({"task_id": "one", "ok": True})
+        assert pb.load_run("one")["ok"] is True
+
+    def test_an_unknown_run_is_none(self):
+        assert pb.load_run("ghost") is None
+
+    def test_listing_is_newest_first(self):
+        for name in ("a", "b", "c"):
+            pb.save_run({"task_id": name})
+        assert [r["task_id"] for r in pb.list_runs()] == ["c", "b", "a"]
+
+    def test_old_runs_are_pruned(self):
+        for index in range(pb.MAX_RUNS_KEPT + 5):
+            pb.save_run({"task_id": f"run{index:03d}"})
+        assert len([n for n in os.listdir(self.root)]) == pb.MAX_RUNS_KEPT
+
+    def test_a_run_id_is_readable(self):
+        assert pb.new_task_id("clone_repo").startswith("clone_repo-")
+
+
+class TestUndoRun:
+
+    def setup_method(self):
+        self.root = tempfile.mkdtemp(prefix="mcp-runs-")
+        self.home = tempfile.mkdtemp(prefix="mcp-home-")
+        self._runs = mock.patch("termux_mcp.playbook.runs_dir",
+                                return_value=self.root)
+        self._home = mock.patch("termux_mcp.playbook.safety_root",
+                                return_value=os.path.join(self.home,
+                                                          "termuxGPT"))
+        self._runs.start()
+        self._home.start()
+
+    def teardown_method(self):
+        self._runs.stop()
+        self._home.stop()
+        shutil.rmtree(self.root, ignore_errors=True)
+        shutil.rmtree(self.home, ignore_errors=True)
+
+    def test_an_unknown_run(self):
+        result = pb.undo_run("ghost", confirmed=True)
+        assert result["ok"] is False
+        assert "No run named ghost" in result["errors"][0]
+
+    def test_it_asks_before_touching_anything(self):
+        pb.save_run({"task_id": "one", "rollback": [{"run": "rm -rf /x"}]})
+        result = pb.undo_run("one")
+        assert result["reason"] == "confirmation_required"
+        assert result["steps"] == [{"run": "rm -rf /x"}]
+
+    def test_it_runs_the_rollback_and_marks_the_run_undone(self):
+        pb.save_run({"task_id": "one",
+                     "rollback": [{"run": "rm -rf /x"}]})
+        with mock.patch("termux_mcp.shell.run_captured",
+                        return_value={"ok": True, "text": ""}) as run:
+            result = pb.undo_run("one", confirmed=True)
+        assert result["ok"] is True
+        assert run.call_args[0][0] == "rm -rf /x"
+        assert pb.load_run("one")["undone"] is True
+
+    def test_a_second_undo_is_refused(self):
+        pb.save_run({"task_id": "one", "rollback": [], "undone": True})
+        assert pb.undo_run("one", confirmed=True)["ok"] is False
+
+    def test_the_file_journal_is_reverted_too(self):
+        target = os.path.join(self.home, "written.txt")
+        with open(target, "w", encoding="utf-8") as handle:
+            handle.write("after")
+        pb.save_run({"task_id": "one", "rollback": []})
+        entry = {"kind": changes.CREATE, "path": target, "ts": "now"}
+        with mock.patch("termux_mcp.playbook.changes.read",
+                        return_value=[entry]):
+            result = pb.undo_run("one", confirmed=True)
+        assert result["ok"] is True
+        assert not os.path.exists(target)
+        assert result["reverted"] == [{"path": target, "what": "removed"}]
+
+
+class TestRollbackValidation:
+
+    def test_a_rollback_step_with_an_undeclared_slot(self):
+        found = _problems({"sample": _playbook(
+            rollback=[{"run": "rm -rf {nope}"}])})
+        assert any("rollback step 0" in p and "{nope}" in p for p in found)
+
+    def test_a_rollback_step_with_neither_run_nor_tool(self):
+        found = _problems({"sample": _playbook(rollback=[{"verify": "x"}])})
+        assert any("rollback step 0 needs exactly one" in p for p in found)
+
+    def test_a_good_rollback_passes(self):
+        assert _problems({"sample": _playbook(
+            rollback=[{"tool": "delete",
+                       "with": {"path": "{thing}"}}])}) == []
+
+    def test_the_shipped_clone_playbook_rolls_back_through_delete(self):
+        library = pb.load_library()
+        rollback = library["playbooks"]["clone_repo"]["rollback"]
+        assert rollback[0]["tool"] == "delete"
 
 
 class _Done:

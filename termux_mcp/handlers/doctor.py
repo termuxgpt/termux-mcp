@@ -1,4 +1,5 @@
-from ..playbook import load_library, run_doctor
+from ..playbook import load_library, run_doctor, run_playbook, undo_run
+from .terminal import _text_response
 from ..utils import json_response
 
 
@@ -94,17 +95,103 @@ def handle_doctor(handler, data: dict) -> None:
         json_response(handler, 200, report)
         return
 
-    body = render(report).encode("utf-8")
-    handler.send_response(200)
-    handler.send_header("Content-Type", "text/plain")
-    handler.send_header("Content-Length", str(len(body)))
-    handler.end_headers()
-    handler.wfile.write(body)
+    _text_response(handler, render(report))
+
+
+def _inputs(data: dict) -> dict:
+    for key in ("with", "inputs"):
+        value = data.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def render_run(result: dict) -> str:
+    name = result.get("playbook") or "?"
+    if not result.get("ok"):
+        lines = [f"{name}: not run."]
+        for blocker in result.get("requirements") or []:
+            if blocker.get("fixed") or blocker.get("already_ok"):
+                continue
+            lines.append(f"  {blocker['check']} is not satisfied: "
+                         f"{blocker.get('reason') or 'unmet'}")
+            for inner in blocker.get("blocked_by") or []:
+                lines.append(f"    blocked by {inner['check']}")
+        for error in result.get("errors") or []:
+            lines.append(f"  {error}")
+        for run in result.get("runs") or []:
+            mark = "ok" if run["ok"] else "failed"
+            lines.append(f"  $ {run.get('step', {}).get('run') or 'step'}"
+                         f" — {mark}")
+            if not run["ok"] and run.get("text"):
+                lines.append("    " + run["text"][:300].replace(
+                    "\n", "\n    "))
+        return "\n".join(lines)
+
+    task_id = result.get("task_id")
+    lines = [f"{name} done ({task_id})."]
+    if result.get("success"):
+        lines.append(result["success"])
+    for run in result.get("runs") or []:
+        what = run.get("step", {}).get("run") or run.get("step", {}).get("tool")
+        lines.append(f"  {'checked' if run.get('verify') else 'ran'}: {what}")
+    if result.get("rollback"):
+        lines.append(f"Undo the whole run: playbooks with undo={task_id} "
+                     f"(and confirmed: true)")
+    return "\n".join(lines)
+
+
+def render_undo(result: dict) -> str:
+    if result.get("errors"):
+        return "\n".join(str(error) for error in result["errors"])
+
+    if result.get("reason") == "confirmation_required":
+        lines = [f"{result['task_id']} would put back "
+                 f"{len(result.get('files') or [])} file(s) and run "
+                 f"{len(result.get('steps') or [])} undo step(s)."]
+        for path in result.get("files") or []:
+            lines.append(f"  file: {path}")
+        for step in result.get("steps") or []:
+            lines.append(f"  step: {step.get('run') or step.get('tool')}")
+        lines.append("Send it again with confirmed: true.")
+        return "\n".join(lines)
+
+    lines = [f"{result['task_id']} undone."]
+    for entry in result.get("reverted") or []:
+        lines.append(f"  {entry['what']}: {entry['path']}")
+    for run in result.get("rollback") or []:
+        mark = "ok" if run["ok"] else "failed"
+        what = run.get("step", {}).get("run") or run.get("step", {}).get("tool")
+        lines.append(f"  {what} — {mark}")
+        if not run["ok"] and run.get("text"):
+            lines.append("    " + run["text"][:200])
+    return "\n".join(lines)
 
 
 def handle_playbooks(handler, data: dict) -> None:
     library = load_library()
     wanted = str(data.get("playbook") or "").strip()
+    as_json = str(data.get("format") or "").strip().lower() == "json"
+
+    undo = str(data.get("undo") or "").strip()
+    if undo:
+        result = undo_run(undo, confirmed=_flag(data, "confirmed"))
+        if as_json:
+            json_response(handler, 200, result)
+            return
+        _text_response(handler, render_undo(result))
+        return
+
+    if wanted and (_flag(data, "run") or _flag(data, "dry_run")):
+        result = run_playbook(wanted, _inputs(data),
+                              confirmed=_flag(data, "confirmed"),
+                              task_id=str(data.get("task_id") or "")[:64],
+                              dry_run=_flag(data, "dry_run"))
+        if as_json:
+            json_response(handler, 200, result)
+            return
+        _text_response(handler, render_run(result))
+        return
 
     if wanted:
         playbook = library["playbooks"].get(wanted)

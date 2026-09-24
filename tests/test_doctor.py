@@ -7,7 +7,8 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from termux_mcp import playbook as pb
-from termux_mcp.handlers.doctor import handle_doctor, handle_playbooks, render
+from termux_mcp.handlers.doctor import (handle_doctor, handle_playbooks,
+                                         render, render_undo)
 from termux_mcp.mcp_bridge import VirtualHandler, decode_virtual, route_callable
 
 
@@ -105,6 +106,10 @@ class TestRenderRepairs:
         text = render(report)
         assert "blocked by network_reachable: The network is reachable" in text
         assert "curl: not found" in text
+
+    def test_an_unknown_run_is_reported_not_crashed(self):
+        text = render_undo({"ok": False, "errors": ["No run named ghost"]})
+        assert text == "No run named ghost"
 
     def test_a_check_that_was_already_fine_says_so(self):
         report = _report([_finding(ok=True, detail="")])

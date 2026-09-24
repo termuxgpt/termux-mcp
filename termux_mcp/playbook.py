@@ -1,8 +1,13 @@
+import datetime
 import json
 import os
 import re
 import subprocess
+import time
 from typing import Optional
+
+from . import changes
+from .safety import safety_root
 
 LIBRARY_DIR = os.path.dirname(os.path.abspath(__file__))
 TASK_DIR = os.path.join(LIBRARY_DIR, "playbooks")
@@ -154,19 +159,22 @@ def _validate_playbook(playbook: dict, checks: dict) -> list:
     steps = _steps_for(playbook)
     if not steps:
         problems.append(f"{name}: no steps")
-    for index, step in enumerate(steps):
-        if not isinstance(step, dict):
-            problems.append(f"{name}: step {index} is not a mapping")
-            continue
-        has = [key for key in ("run", "tool") if key in step]
-        if len(has) != 1:
-            problems.append(f"{name}: step {index} needs exactly one of run "
-                            "or tool")
-        for where, text in _step_templates(step):
-            for slot in _placeholders(text):
-                if slot not in declared:
-                    problems.append(f"{name}: step {index} {where} uses "
-                                    f"{{{slot}}}, which is not declared")
+    for label, block in (("step", steps),
+                         ("rollback step", playbook.get("rollback") or [])):
+        for index, step in enumerate(block):
+            if not isinstance(step, dict):
+                problems.append(f"{name}: {label} {index} is not a mapping")
+                continue
+            has = [key for key in ("run", "tool") if key in step]
+            if len(has) != 1:
+                problems.append(f"{name}: {label} {index} needs exactly one "
+                                "of run or tool")
+            for where, text in _step_templates(step):
+                for slot in _placeholders(text):
+                    if slot not in declared:
+                        problems.append(f"{name}: {label} {index} {where} "
+                                        f"uses {{{slot}}}, which is not "
+                                        "declared")
 
     for slot in _placeholders(str(playbook.get("success") or "")):
         if slot not in declared:
@@ -459,6 +467,210 @@ def run_check(check: dict, timeout: int = PROBE_TIMEOUT) -> dict:
 
 
 MAX_REPAIRS = 6
+MAX_RUNS_KEPT = 50
+MAX_RECORD_TEXT = 400
+
+
+def new_task_id(playbook_id: str) -> str:
+    return f"{playbook_id}-{time.strftime('%Y%m%d-%H%M%S')}"[:64]
+
+
+def runs_dir() -> str:
+    return safety_root("runs")
+
+
+def run_record_path(task_id: str) -> str:
+    return os.path.join(runs_dir(), f"{task_id}.json")
+
+
+def save_run(record: dict) -> None:
+    path = run_record_path(record["task_id"])
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(record, handle, indent=1)
+        os.replace(tmp, path)
+    except OSError:
+        return
+    try:
+        kept = sorted(os.listdir(runs_dir()))
+        for name in kept[:-MAX_RUNS_KEPT]:
+            os.remove(os.path.join(runs_dir(), name))
+    except OSError:
+        return
+
+
+def load_run(task_id: str):
+    body, error = _read(run_record_path(str(task_id)))
+    return None if error else body
+
+
+def list_runs(limit: int = 20):
+    try:
+        names = sorted(os.listdir(runs_dir()), reverse=True)
+    except OSError:
+        return []
+    records = []
+    for name in names[:limit]:
+        if not name.endswith(".json"):
+            continue
+        body = load_run(os.path.splitext(name)[0])
+        if isinstance(body, dict):
+            records.append(body)
+    return records
+
+
+def run_tool(name: str, params: dict) -> dict:
+    from .mcp_bridge import VirtualHandler, decode_virtual, route_callable
+
+    route = route_callable(name)
+    if route is None:
+        from .mcp_core import NATIVE_NAMES
+        if name in NATIVE_NAMES:
+            return {"ok": False, "reason": "unknown_tool",
+                    "text": f"{name} is a native tool this engine cannot call "
+                            "from a step — a run step reaches the same thing"}
+        return {"ok": False, "reason": "unknown_tool",
+                "text": f"No tool named {name}"}
+    handler = VirtualHandler()
+    route(handler, params or {})
+    result = decode_virtual(handler)
+    return {"ok": not result.get("is_error"), "reason": "",
+            "text": result.get("text", "")}
+
+
+def run_step(step: dict, confirmed: bool = False, task_id: str = "") -> dict:
+    from .shell import run_captured
+
+    if step.get("run"):
+        return run_captured(step["run"], confirmed=confirmed, task_id=task_id)
+
+    name = step.get("tool")
+    if not name:
+        return {"ok": False, "reason": "empty", "text": "Nothing to run."}
+
+    params = dict(step.get("with") or {})
+    if confirmed:
+        params.setdefault("confirmed", True)
+    return run_tool(name, params)
+
+
+def _short(text: str) -> str:
+    text = str(text or "")
+    return text if len(text) <= MAX_RECORD_TEXT else text[:MAX_RECORD_TEXT] + "..."
+
+
+def run_playbook(playbook_id: str, inputs=None, confirmed: bool = False,
+                 task_id: str = "", dry_run: bool = False) -> dict:
+    playbooks, errors = load_playbooks()
+    plan = resolve(playbook_id, inputs, playbooks)
+    if not plan["ok"]:
+        return {"ok": False, "playbook": playbook_id,
+                "errors": plan["errors"] + errors}
+
+    playbook = playbooks[playbook_id]
+    task_id = str(task_id or new_task_id(playbook_id))[:64]
+
+    rollback, _ = substitute(playbook.get("rollback") or [], plan["inputs"])
+
+    if dry_run:
+        return {"ok": True, "dry_run": True, "playbook": playbook_id,
+                "task_id": task_id, "inputs": plan["inputs"],
+                "steps": plan["steps"], "rollback": rollback,
+                "success": plan["success"]}
+
+    requirements = []
+    for check_id in requirement_ids(playbook):
+        outcome = repair(check_id, confirmed=confirmed, task_id=task_id)
+        requirements.append(outcome)
+        if not (outcome.get("fixed") or outcome.get("already_ok")):
+            return {"ok": False, "playbook": playbook_id, "task_id": task_id,
+                    "requirements": requirements, "steps": [],
+                    "errors": [f"{check_id} is not satisfied: "
+                               f"{outcome.get('reason') or 'unmet'}"]}
+
+    started = datetime.datetime.now().isoformat(timespec="seconds")
+    runs = []
+
+    def finish(ok: bool, reason: str = ""):
+        record = {
+            "task_id": task_id, "playbook": playbook_id,
+            "title": playbook.get("title"), "inputs": plan["inputs"],
+            "started": started, "finished":
+                datetime.datetime.now().isoformat(timespec="seconds"),
+            "ok": ok, "reason": reason,
+            "steps": [{"run": r.get("step", {}).get("run"),
+                       "tool": r.get("step", {}).get("tool"),
+                       "verify": bool(r.get("verify")),
+                       "ok": r["ok"], "text": _short(r.get("text", ""))}
+                      for r in runs],
+            "rollback": rollback, "undone": False,
+        }
+        save_run(record)
+        return record
+
+    for step in plan["steps"]:
+        result = run_step(step, confirmed=confirmed, task_id=task_id)
+        runs.append(dict(result, step=step))
+        if not result["ok"]:
+            finish(False, "a step failed")
+            return {"ok": False, "playbook": playbook_id, "task_id": task_id,
+                    "requirements": requirements, "runs": runs,
+                    "errors": [result.get("reason") or "a step failed"]}
+
+        verify = step.get("verify")
+        if verify:
+            checked = run_step({"run": verify}, confirmed=True,
+                               task_id=task_id)
+            runs.append(dict(checked, step={"run": verify}, verify=True))
+            if not checked["ok"]:
+                finish(False, "verification failed")
+                return {"ok": False, "playbook": playbook_id,
+                        "task_id": task_id, "requirements": requirements,
+                        "runs": runs,
+                        "errors": [f"checked, and it did not hold: {verify}"]}
+
+    record = finish(True)
+    return {"ok": True, "playbook": playbook_id, "task_id": task_id,
+            "requirements": requirements, "runs": runs, "record": record,
+            "rollback": rollback, "success": plan["success"]}
+
+
+def undo_run(task_id: str, confirmed: bool = False) -> dict:
+    from .safety import snapshot_before_write
+
+    record = load_run(str(task_id))
+    if not isinstance(record, dict):
+        return {"ok": False, "errors": [f"No run named {task_id}"]}
+    if record.get("undone"):
+        return {"ok": False, "errors": [f"{task_id} was already undone"]}
+
+    rollback = record.get("rollback") or []
+    entries = [e for e in changes.read(safety_root(""), limit=200,
+                                       task=str(task_id))
+               if changes.revertable(e)]
+
+    if not confirmed:
+        return {"ok": False, "reason": "confirmation_required",
+                "task_id": task_id,
+                "files": [e.get("path") for e in entries],
+                "steps": rollback,
+                "message": (f"Putting {len(entries)} file(s) back and running "
+                            f"{len(rollback)} undo step(s).")}
+
+    reverted = changes.revert(entries, snapshot_before=snapshot_before_write)
+    rolls = []
+    for step in rollback:
+        rolls.append(dict(run_step(step, confirmed=True, task_id=task_id),
+                          step=step))
+
+    record["undone"] = True
+    record["undone_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+    save_run(record)
+    return {"ok": all(r["ok"] for r in rolls), "task_id": task_id,
+            "reverted": [{"path": path, "what": what} for path, what in reverted],
+            "rollback": rolls}
 
 
 def requirement_ids(playbook: dict):
@@ -468,8 +680,6 @@ def requirement_ids(playbook: dict):
 
 def apply_fix(check: dict, confirmed: bool = False, task_id: str = "",
               playbooks=None) -> dict:
-    from .shell import run_captured
-
     name = check.get("id")
     fix = check.get("fix")
     if not isinstance(fix, dict) or not fix.get("playbook"):
@@ -486,15 +696,9 @@ def apply_fix(check: dict, confirmed: bool = False, task_id: str = "",
 
     runs = []
     for step in plan["steps"]:
-        command = step.get("run")
-        if not command:
-            runs.append({"cmd": "", "ok": False,
-                         "reason": "tool steps arrive with execution"})
-            return {"check": name, "applied": False, "fixed": False,
-                    "reason": "this fix needs a step the engine cannot run "
-                              "yet", "runs": runs,
-                    "playbook": fix["playbook"]}
-        result = run_captured(command, confirmed=confirmed, task_id=task_id)
+        command = step.get("run") or f"{step.get('tool')} " \
+                                     f"{json.dumps(step.get('with') or {})}"
+        result = run_step(step, confirmed=confirmed, task_id=task_id)
         runs.append(dict(result, cmd=command))
         if not result["ok"]:
             return {"check": name, "applied": False, "fixed": False,

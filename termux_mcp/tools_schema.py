@@ -943,11 +943,17 @@ OPENAI_TOOLS = [
         "type": "function",
         "function": {
             "name": "playbooks",
-            "description": "List the local playbook library — the tasks this phone can run without a model — or read one in full by id.",
+            "description": "The library of tasks this phone runs with no model: list, read, run, or undo a run. Costs nothing, meets requirements first, verifies each step.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "playbook": {"type": "string", "description": "An id from the list, for the full definition"}
+                    "playbook": {"type": "string", "description": "An id from the list"},
+                    "run": {"type": "boolean", "description": "Run it"},
+                    "dry_run": {"type": "boolean", "description": "Show the commands without running"},
+                    "with": {"type": "object", "description": "Slot values, e.g. {\"repo\": \"owner/name\"}"},
+                    "confirmed": {"type": "boolean", "description": "Agree to steps that would otherwise ask"},
+                    "task_id": {"type": "string", "description": "Your own id for this run"},
+                    "undo": {"type": "string", "description": "A run id to put back"}
                 }
             }
         }
