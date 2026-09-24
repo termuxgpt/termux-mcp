@@ -23,13 +23,38 @@ class TestMatching:
         assert _top("clone this repo: bhai4you/termux-mcp")["score"] == 1.0
 
     def test_the_title_is_a_weaker_signal(self):
-        top = _top("clone a git repository")
+        top = _top("git repository")
         assert top["playbook"] == "clone_repo"
         assert top["score"] < 1.0
 
     def test_something_unknown_matches_nothing(self):
-        assert pb.match_text("turn off the wifi") == []
-        assert pb.match_text("what is my battery") == []
+        assert pb.match_text("order me a pizza") == []
+        assert pb.match_text("book a taxi") == []
+
+    def test_a_half_match_is_offered_not_run(self):
+        result = pb.do_text("turn off the wifi")
+        assert result["ok"] is False
+        assert result["reason"] == "unsure"
+        assert result["candidates"][0]["playbook"] == "wifi_status"
+
+    def test_the_everyday_requests_land(self):
+        for text, expected in (
+                ("update termux", "update_packages"),
+                ("update my packages", "update_packages"),
+                ("install git", "install_package"),
+                ("install python", "install_package"),
+                ("how much space is left", "check_storage"),
+                ("what is taking up space", "find_large_files"),
+                ("free up space", "free_space"),
+                ("how is my battery", "battery_status"),
+                ("what wifi am i on", "wifi_status"),
+                ("create an ssh key", "ssh_key_setup"),
+                ("give termux storage access", "termux_storage_setup"),
+                ("clone this repo: bhai4you/termux-mcp", "clone_repo")):
+            top = _top(text)
+            assert top is not None, text
+            assert top["playbook"] == expected, (text, top["playbook"])
+            assert top["score"] >= pb.MIN_CONFIDENCE, text
 
     def test_the_strongest_match_is_first(self):
         found = pb.match_text("install git")
@@ -98,7 +123,7 @@ class TestDoText:
 
     def test_an_unknown_request_runs_nothing(self):
         with mock.patch("termux_mcp.playbook.run_playbook") as run:
-            result = pb.do_text("turn off the wifi")
+            result = pb.do_text("order me a pizza")
         assert run.call_count == 0
         assert result["reason"] == "unknown"
         assert result["candidates"] == []

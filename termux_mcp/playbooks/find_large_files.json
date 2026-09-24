@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "id": "find_large_files",
+  "title": "Find what is using the most space",
+  "category": "system",
+  "risk": "safe",
+  "phrases": ["what is taking up space", "find large files", "what is using my storage", "biggest files", "what is eating my storage"],
+  "match": {
+    "path": {"type": "path", "default": "~"}
+  },
+  "requires": [],
+  "steps": [
+    {"run": "du -h -d 2 {path} 2>/dev/null | sort -hr | head -25"}
+  ],
+  "success": "The largest directories under {path} are listed above."
+}

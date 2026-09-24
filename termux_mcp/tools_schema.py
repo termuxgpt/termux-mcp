@@ -942,6 +942,25 @@ OPENAI_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "harvest",
+            "description": "Save what you just did as a task this phone repeats with no model. Give the commands that worked; the values in them become slots it takes next time. Validated before it is saved, and it lands in the user's own library.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "steps": {"type": "array", "items": {"type": "string"}, "description": "The commands that worked, in order"},
+                    "title": {"type": "string", "description": "What to call it"},
+                    "values": {"type": "object", "description": "Values to turn into slots, e.g. {\"repo\": \"owner/name\"}"},
+                    "phrases": {"type": "array", "items": {"type": "string"}, "description": "How the user would ask for it"},
+                    "playbook": {"type": "string", "description": "An id of your own"},
+                    "overwrite": {"type": "boolean", "description": "Replace a saved task of the same name"}
+                },
+                "required": ["steps"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "doctor",
             "description": "Check this Termux install for the things that break everyday work — a missing tool, unlinked storage, a stuck package manager, no network. Read-only: it reports and names the fix, and changes nothing.",
             "parameters": {
@@ -1006,7 +1025,7 @@ TOOL_CATEGORIES = {
     "terminal_send": "terminal", "terminal_read": "terminal",
     "terminal_list": "terminal", "terminal_close": "terminal",
     "history": "history", "history_save": "history", "history_clear": "history",
-    "do": "automation", "doctor": "diagnose", "playbooks": "automation",
+    "do": "automation", "harvest": "automation", "doctor": "diagnose", "playbooks": "automation",
     "theme_list": "appearance", "theme_preview": "appearance",
     "theme_apply": "appearance", "theme_revert": "appearance",
     "font": "appearance", "banner_render": "appearance",

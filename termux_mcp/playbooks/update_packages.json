@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "id": "update_packages",
+  "title": "Update Termux and its packages",
+  "category": "packages",
+  "risk": "write",
+  "phrases": ["update termux", "update my packages", "update packages", "pkg update", "upgrade everything", "update everything"],
+  "match": {},
+  "requires": [{"check": "network_reachable"}],
+  "steps": [
+    {"run": "pkg update", "verify": "test -s $PREFIX/var/lib/apt/lists/*Packages 2>/dev/null || ls $PREFIX/var/lib/apt/lists/ | grep -q ."},
+    {"run": "pkg upgrade -y"}
+  ],
+  "success": "Termux and every installed package are up to date."
+}

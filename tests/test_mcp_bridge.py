@@ -127,7 +127,7 @@ class VirtualHandlerTests(unittest.TestCase):
         self.assertIn("all good", res["text"])
 
 
-TOOL_LIST_BUDGET_CHARS = 26_000
+TOOL_LIST_BUDGET_CHARS = 28_000
 SINGLE_TOOL_LIMIT_CHARS = 1_600
 
 
@@ -146,8 +146,11 @@ class RegistryTests(unittest.TestCase):
             size, TOOL_LIST_BUDGET_CHARS,
             f"the tool list now costs {size} characters of every request "
             f"(budget {TOOL_LIST_BUDGET_CHARS}). Room is not free: merge tools, "
-            "trim descriptions, or raise the budget deliberately — the number "
-            "was 21,737 across 69 tools when this guard replaced a count.")
+            "trim descriptions, or raise the budget deliberately — this was "
+            "raised from 26,000 to 28,000 at 76 tools, after the whole "
+            "playbook surface (doctor, playbooks, do, harvest) had to fit in "
+            "under 300 characters. The original guard replaced a count of "
+            "69 tools costing 21,737.")
 
     def test_no_single_tool_eats_the_budget(self):
         tools = bridge.build_mcp_tool_list(core.NATIVE_TOOL_DEFS)

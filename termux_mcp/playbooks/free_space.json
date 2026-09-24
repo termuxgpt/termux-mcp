@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "id": "free_space",
+  "title": "Clear the package cache",
+  "category": "system",
+  "risk": "write",
+  "phrases": ["free up space", "clean the cache", "clear the package cache", "pkg clean", "clean up termux"],
+  "match": {},
+  "requires": [],
+  "steps": [
+    {"run": "pkg clean", "verify": "test -d $PREFIX/var/cache/apt/archives"},
+    {"run": "df -h $HOME | tail -1"}
+  ],
+  "success": "The downloaded package archives are gone. Nothing installed was touched."
+}

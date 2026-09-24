@@ -218,12 +218,17 @@ Set `TERMUX_MCP_AUTH_TOKEN` to a value 16+ characters long to require authentica
 |---|---|---|---|
 | `/do` | POST | `text`, `dry_run`, `confirmed`, `format` | Do what the user asked, in their own words, when the phone already knows how. Matches their words to a playbook and fills its values — free, no model. If it is not known, nothing runs |
 | `/doctor` | POST | `check`, `fix`, `confirmed`, `task_id`, `format` (text/json) | Check this install for the things that break everyday work — missing tools, unlinked storage, a stuck package manager, no network. Reports and names the fix; with `fix: true` it applies each failing check's repair (its requirements first), then re-checks. Every repair command goes through the same risk gate, snapshots and journal as any other |
+| `/harvest` | POST | `steps`, `title`, `values`, `phrases`, `playbook`, `overwrite`, `format` | Save what was just done as a task the phone can repeat with no model: the values in the commands become slots. Validated before it lands in `~/termuxGPT/playbooks/` |
 | `/playbooks` | POST | `playbook`, `run`, `dry_run`, `with`, `confirmed`, `task_id`, `undo`, `format` | List the library, read one, run one, or undo a run. A run meets its requirements first, verifies each step, and writes a record — so the whole thing undoes as one unit |
 
 Playbooks are declarative, one JSON file each, and validated when they load:
 phrases, typed slots, preconditions, steps with a verification, and the line
 to say afterwards. The doctor's checks are the same objects — a check is a
-probe with a fix, and a playbook's `requires` names a check. See
+probe with a fix, and a playbook's `requires` names a check. Ten ship with
+the package (update and upgrade, install anything, clone a repo, storage
+setup, check space, find what is eating it, clear the package cache, battery,
+wifi, an SSH key); `harvest` adds more, saved under `~/termuxGPT/playbooks/`
+and loaded alongside the shipped ones. See
 [docs/playbooks-plan.md](docs/playbooks-plan.md).
 
 ### Smart Tools

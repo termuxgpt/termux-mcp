@@ -30,7 +30,8 @@ from .handlers.features import (
 from .handlers.history import (
     handle_history_list, handle_history_save, handle_history_clear,
 )
-from .handlers.doctor import handle_do, handle_doctor, handle_playbooks
+from .handlers.doctor import (handle_do, handle_doctor, handle_harvest,
+                              handle_playbooks)
 from .utils import (
     shell_quote, shell_quote_num, require_int, require_number, is_safe_path,
     is_sensitive_path, json_response, is_install_command, encode_base64,
@@ -576,6 +577,10 @@ class MCPHandler(BaseHTTPRequestHandler):
 
         if path == "/doctor":
             handle_doctor(self, data)
+            return
+
+        if path == "/harvest":
+            handle_harvest(self, data)
             return
 
         if path == "/playbooks":

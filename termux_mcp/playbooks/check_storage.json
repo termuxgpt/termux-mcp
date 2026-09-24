@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "id": "check_storage",
+  "title": "Show how much space is left",
+  "category": "system",
+  "risk": "safe",
+  "phrases": ["how much space is left", "check storage", "how much space do i have", "disk space", "storage space", "how much storage is free"],
+  "match": {},
+  "requires": [],
+  "steps": [
+    {"run": "df -h $HOME $PREFIX | sed 's/  */ /g'"}
+  ],
+  "success": "That is the free space on the Termux filesystem."
+}

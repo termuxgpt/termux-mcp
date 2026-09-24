@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "id": "battery_status",
+  "title": "Show the battery",
+  "category": "device",
+  "risk": "safe",
+  "phrases": ["how is my battery", "battery status", "battery level", "how much battery"],
+  "match": {},
+  "requires": [{"check": "termux_api_present"}],
+  "steps": [
+    {"run": "termux-battery-status", "verify": "termux-battery-status | grep -q percentage"}
+  ],
+  "success": "That is the current battery state."
+}

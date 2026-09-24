@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "id": "wifi_status",
+  "title": "Show the wifi this phone is on",
+  "category": "network",
+  "risk": "safe",
+  "phrases": ["what wifi am i on", "wifi status", "which network am i on", "show my wifi"],
+  "match": {},
+  "requires": [{"check": "termux_api_present"}],
+  "steps": [
+    {"run": "termux-wifi-connectioninfo"}
+  ],
+  "success": "That is the network this phone is on."
+}

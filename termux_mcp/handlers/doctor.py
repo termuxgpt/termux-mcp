@@ -1,5 +1,5 @@
-from ..playbook import (do_text, load_library, run_doctor, run_playbook,
-                        undo_run)
+from ..playbook import (do_text, harvest, load_library, run_doctor,
+                        run_playbook, undo_run)
 from .terminal import _text_response
 from ..utils import json_response
 
@@ -140,6 +140,50 @@ def render_run(result: dict) -> str:
         lines.append(f"Undo the whole run: playbooks with undo={task_id} "
                      f"(and confirmed: true)")
     return "\n".join(lines)
+
+
+def _list(value) -> list:
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value if str(item).strip()]
+    return [part.strip() for part in str(value or "").splitlines()
+            if part.strip()]
+
+
+def render_harvest(result: dict) -> str:
+    if not result.get("ok"):
+        lines = ["Not saved."]
+        for error in result.get("errors") or []:
+            lines.append(f"  {error}")
+        for step in (result.get("draft") or {}).get("steps") or []:
+            lines.append(f"  $ {step['run']}")
+        return "\n".join(lines)
+
+    draft = result["draft"]
+    lines = [f"Saved as {result['playbook']} — {draft['title']}.",
+             f"  file: {result['path']}"]
+    for step in draft["steps"]:
+        lines.append(f"  $ {step['run']}")
+    if result.get("slots"):
+        lines.append("  takes: " + ", ".join(result["slots"]))
+    lines.append(f"  phrases: {'; '.join(draft['phrases'])}")
+    lines.append("  " + result["note"])
+    return "\n".join(lines)
+
+
+def handle_harvest(handler, data: dict) -> None:
+    result = harvest(steps=_list(data.get("steps")),
+                     title=str(data.get("title") or ""),
+                     phrases=_list(data.get("phrases")),
+                     values=data.get("values") if isinstance(
+                         data.get("values"), dict) else {},
+                     playbook_id=str(data.get("playbook")
+                                     or data.get("id") or ""),
+                     overwrite=_flag(data, "overwrite"))
+
+    if str(data.get("format") or "").strip().lower() == "json":
+        json_response(handler, 200, result)
+        return
+    _text_response(handler, render_harvest(result))
 
 
 def render_undo(result: dict) -> str:

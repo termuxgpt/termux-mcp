@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "id": "ssh_key_setup",
+  "title": "Create an SSH key",
+  "category": "network",
+  "risk": "write",
+  "phrases": ["create an ssh key", "make me an ssh key", "generate an ssh key", "set up ssh"],
+  "match": {
+    "comment": {"type": "text", "default": "termux"}
+  },
+  "requires": [],
+  "steps": [
+    {"run": "test -f ~/.ssh/id_ed25519 || ssh-keygen -t ed25519 -N '' -C {comment} -f ~/.ssh/id_ed25519",
+     "verify": "test -f ~/.ssh/id_ed25519.pub"},
+    {"run": "cat ~/.ssh/id_ed25519.pub"}
+  ],
+  "rollback": [
+    {"tool": "delete", "with": {"path": "~/.ssh/id_ed25519"}},
+    {"tool": "delete", "with": {"path": "~/.ssh/id_ed25519.pub"}}
+  ],
+  "success": "The public key is above — that is the one to paste into GitHub or a server."
+}

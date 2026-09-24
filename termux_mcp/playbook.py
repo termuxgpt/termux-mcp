@@ -71,8 +71,19 @@ def _load_dir(directory: str):
     return found, errors
 
 
+def user_dir() -> str:
+    return safety_root("playbooks")
+
+
 def load_playbooks():
-    return _load_dir(TASK_DIR)
+    shipped, errors = _load_dir(TASK_DIR)
+    mine, mine_errors = _load_dir(user_dir())
+    errors = errors + mine_errors
+    clash = sorted(set(shipped) & set(mine))
+    for name in clash:
+        errors.append(f"{name}: a saved playbook cannot take a shipped name")
+        mine.pop(name, None)
+    return dict(shipped, **mine), errors
 
 
 def load_checks():
@@ -466,7 +477,7 @@ def run_check(check: dict, timeout: int = PROBE_TIMEOUT) -> dict:
                 code=done.returncode)
 
 
-MIN_CONFIDENCE = 0.5
+MIN_CONFIDENCE = 0.6
 
 STOPWORDS = frozenset(
     "a an the this that these those my your our their please can you could "
@@ -475,8 +486,8 @@ STOPWORDS = frozenset(
 
 EXTRACTORS = {
     "repo": re.compile(
-        r"(?:https?://github\.com/)?([\w.-]+/[\w.-]+?)(?:\.git)?(?:\s|$)",
-        re.IGNORECASE),
+        r"(?<![/\w.-])(?:https?://github\.com/)?([\w.-]+/[\w.-]+?)(?:\.git)?"
+        r"(?:\s|$)", re.IGNORECASE),
     "url": re.compile(r"https?://[^\s\"']+", re.IGNORECASE),
     "path": re.compile(
         r"(?<![\w:/~])(~\S+|/(?:[\w.-]+)(?:/[\w.-]+)*)"),
@@ -486,8 +497,8 @@ EXTRACTORS = {
     "name": re.compile(r"[\"']([^\"']{1,40})[\"']"),
     "command": re.compile(r"`([^`]+)`"),
     "package": re.compile(
-        r"\b(?:pkg\s+|apt\s+)?install\s+(?:the\s+)?(?:package\s+)?"
-        r"([\w.+-]+)", re.IGNORECASE),
+        r"\b(?:\w+\s+)?install\s+(?:-{1,2}[\w-]+\s+)*(?:the\s+)?"
+        r"(?:package\s+)?([A-Za-z0-9][\w.+-]*)", re.IGNORECASE),
 }
 
 MAX_CANDIDATES = 3
@@ -503,7 +514,7 @@ def words(text) -> set:
 
 
 def phrase_score(text, phrase) -> float:
-    wanted = words(phrase)
+    wanted = words(PLACEHOLDER.sub(" ", str(phrase or "")))
     if not wanted:
         return 0.0
     return len(wanted & words(text)) / len(wanted)
@@ -584,6 +595,129 @@ def do_text(text: str, confirmed: bool = False, dry_run: bool = False,
                           dry_run=dry_run)
     return dict(result, matched=best["playbook"], score=best["score"],
                 candidates=candidates[:MAX_CANDIDATES])
+
+
+SLOT_ORDER = ("repo", "url", "path", "host", "package", "port", "name",
+              "command")
+
+
+def _slug(text: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", str(text or "").lower()).strip("_")
+    return slug[:48]
+
+
+def suggest_values(steps) -> dict:
+    joined = "\n".join(
+        step if isinstance(step, str) else str(step.get("run") or "")
+        for step in steps)
+    found = {}
+    for kind in SLOT_ORDER:
+        pattern = EXTRACTORS.get(kind)
+        if pattern is None:
+            continue
+        for match in pattern.finditer(joined):
+            value = match.group(1) if match.groups() else match.group(0)
+            if len(str(value)) < 2:
+                continue
+            found.setdefault(kind, [])
+            if value not in found[kind]:
+                found[kind].append(value)
+    return found
+
+
+def _slot_names(kinds) -> dict:
+    names = {}
+    for kind, values in kinds.items():
+        for index, value in enumerate(values):
+            name = kind if index == 0 else f"{kind}{index + 1}"
+            names[value] = (name, kind)
+    return names
+
+
+def harvest(steps, title: str = "", phrases=None, values=None,
+            playbook_id: str = "", overwrite: bool = False,
+            playbook_dir: str = "") -> dict:
+    commands = []
+    for step in steps or []:
+        if isinstance(step, str) and step.strip():
+            commands.append(step.strip())
+        elif isinstance(step, dict) and str(step.get("run") or "").strip():
+            commands.append(str(step["run"]).strip())
+    if not commands:
+        return {"ok": False, "errors": ["Nothing to learn: no steps were given."]}
+
+    supplied = {str(k): str(v) for k, v in (values or {}).items()}
+    names = {value: (slot, _slot_type(slot))
+             for slot, value in supplied.items()}
+    if not supplied:
+        names = _slot_names(suggest_values(commands))
+
+    rank = {kind: index for index, kind in enumerate(SLOT_ORDER)}
+    params, seen = {}, set()
+    templated = []
+    for command in commands:
+        for value in sorted(names, key=lambda v: (rank.get(names[v][1], 99),
+                                                  -len(v))):
+            slot, _ = names[value]
+            if value in command:
+                command = command.replace(value, "{%s}" % slot)
+                if slot not in seen:
+                    seen.add(slot)
+                    params[slot] = {"type": _slot_type(slot),
+                                    "required": True}
+        templated.append({"run": command})
+
+    title = str(title or "").strip() or "Saved task"
+    playbook_id = _slug(playbook_id or title)
+    if not playbook_id:
+        return {"ok": False, "errors": ["A title or an id is needed."]}
+
+    draft = {
+        "schema": SCHEMA_VERSION,
+        "id": playbook_id,
+        "title": title,
+        "category": "saved",
+        "risk": "write",
+        "phrases": [str(p) for p in (phrases or []) if str(p).strip()]
+                    or [f"do {_slug(title).replace('_', ' ')}"],
+        "match": params,
+        "requires": [],
+        "steps": templated,
+        "success": f"{title} done.",
+    }
+
+    problems = _validate_playbook(dict(draft, _file=f"{playbook_id}.json"),
+                                  load_checks()[0])
+    if problems:
+        return {"ok": False, "errors": problems, "draft": draft}
+
+    directory = playbook_dir or user_dir()
+    path = os.path.join(directory, f"{playbook_id}.json")
+    if os.path.exists(path) and not overwrite:
+        return {"ok": False, "draft": draft,
+                "errors": [f"{path} already exists — pass overwrite to "
+                           "replace it"]}
+    try:
+        os.makedirs(directory, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(draft, handle, indent=2)
+            handle.write("\n")
+    except OSError as error:
+        return {"ok": False, "errors": [str(error)], "draft": draft}
+
+    return {"ok": True, "playbook": playbook_id, "path": path,
+            "draft": draft, "slots": sorted(params),
+            "known_values": sorted(names),
+            "note": "No rollback was declared, so undo covers the files the "
+                    "journal saw — not a clone, an uninstall or anything else "
+                    "the safety layer cannot see."}
+
+
+def _slot_type(slot: str) -> str:
+    for kind in SLOT_ORDER:
+        if slot == kind or slot.startswith(kind):
+            return kind
+    return "text"
 
 
 def new_task_id(playbook_id: str) -> str:
@@ -849,7 +983,8 @@ def repair(check_id: str, confirmed: bool = False, task_id: str = "",
 
     blockers = []
     fix = check.get("fix")
-    target = playbooks.get((fix or {}).get("playbook")) if isinstance(fix, dict) else None
+    wanted = str((fix or {}).get("playbook") or "") if isinstance(fix, dict) else ""
+    target = playbooks.get(wanted)
     for needed in requirement_ids(target or {}):
         outcome = repair(needed, confirmed=confirmed, task_id=task_id,
                          seen=seen, depth=depth + 1)
