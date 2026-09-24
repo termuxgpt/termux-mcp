@@ -107,6 +107,22 @@ class TestExtraction:
                 pb.load_playbooks()[0]["install_package"], text)[0][
                     "package"] == text.split()[-1]
 
+    def test_the_package_can_come_before_or_after_the_verb(self):
+        install = pb.load_playbooks()[0]["install_package"]
+        for text in ("install php", "php install", "check and php install",
+                     "node install", "pkg install git", "apt install curl",
+                     "npm install -g pm2"):
+            want = {"install php": "php", "php install": "php",
+                    "check and php install": "php", "node install": "node",
+                    "pkg install git": "git", "apt install curl": "curl",
+                    "npm install -g pm2": "pm2"}[text]
+            assert pb.extract_inputs(install, text)[0]["package"] == want, text
+
+    def test_the_verb_alone_is_not_a_package(self):
+        install = pb.load_playbooks()[0]["install_package"]
+        assert "package" not in pb.extract_inputs(install, "pkg install")[0]
+        assert "package" not in pb.extract_inputs(install, "apt install")[0]
+
     def test_a_missing_required_input_is_reported(self):
         _, missing = pb.extract_inputs(
             pb.load_playbooks()[0]["clone_repo"], "clone a repo")

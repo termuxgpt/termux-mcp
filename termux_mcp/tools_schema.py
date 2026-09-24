@@ -961,6 +961,25 @@ OPENAI_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "capsule",
+            "description": "Move a saved task between phones as one signed file: export it, preview what someone else's would do, or install it. A preview shows the steps, what it would install and who signed it, and nothing is installed without confirmed: true.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["export", "preview", "import"], "description": "Defaults to preview"},
+                    "playbook": {"type": "string", "description": "Which task to export"},
+                    "path": {"type": "string", "description": "The capsule file, for preview or import"},
+                    "sign": {"type": "boolean", "description": "Sign the export with the phone's SSH key"},
+                    "signer": {"type": "string", "description": "The public key you expect it to be signed by"},
+                    "confirmed": {"type": "boolean", "description": "Go ahead and install it"},
+                    "overwrite": {"type": "boolean", "description": "Replace a saved task of the same name"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "doctor",
             "description": "Check this Termux install for the things that break everyday work — a missing tool, unlinked storage, a stuck package manager, no network. Read-only: it reports and names the fix, and changes nothing.",
             "parameters": {
@@ -1025,7 +1044,7 @@ TOOL_CATEGORIES = {
     "terminal_send": "terminal", "terminal_read": "terminal",
     "terminal_list": "terminal", "terminal_close": "terminal",
     "history": "history", "history_save": "history", "history_clear": "history",
-    "do": "automation", "harvest": "automation", "doctor": "diagnose", "playbooks": "automation",
+    "do": "automation", "harvest": "automation", "capsule": "automation", "doctor": "diagnose", "playbooks": "automation",
     "theme_list": "appearance", "theme_preview": "appearance",
     "theme_apply": "appearance", "theme_revert": "appearance",
     "font": "appearance", "banner_render": "appearance",

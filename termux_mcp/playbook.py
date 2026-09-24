@@ -75,6 +75,10 @@ def user_dir() -> str:
     return safety_root("playbooks")
 
 
+def shipped_playbooks():
+    return _load_dir(TASK_DIR)[0]
+
+
 def load_playbooks():
     shipped, errors = _load_dir(TASK_DIR)
     mine, mine_errors = _load_dir(user_dir())
@@ -498,7 +502,9 @@ EXTRACTORS = {
     "command": re.compile(r"`([^`]+)`"),
     "package": re.compile(
         r"\b(?:\w+\s+)?install\s+(?:-{1,2}[\w-]+\s+)*(?:the\s+)?"
-        r"(?:package\s+)?([A-Za-z0-9][\w.+-]*)", re.IGNORECASE),
+        r"(?:package\s+)?([A-Za-z0-9][\w.+-]*)"
+        r"|\b(?!(?:pkg|apt|npm|pip|gem|cargo|yarn|pnpm|brew|go|snap)\s)"
+        r"([A-Za-z0-9][\w.+-]*)\s+install\b", re.IGNORECASE),
 }
 
 MAX_CANDIDATES = 3
@@ -538,8 +544,8 @@ def extract_inputs(playbook: dict, text: str):
         if pattern is not None:
             found = pattern.search(str(text or ""))
             if found:
-                values[slot] = (found.group(1) if found.groups()
-                                else found.group(0))
+                groups = [group for group in found.groups() if group]
+                values[slot] = groups[0] if groups else found.group(0)
                 continue
         if "default" in spec or spec.get("from"):
             continue

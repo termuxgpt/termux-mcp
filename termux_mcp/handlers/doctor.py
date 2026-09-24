@@ -186,6 +186,90 @@ def handle_harvest(handler, data: dict) -> None:
     _text_response(handler, render_harvest(result))
 
 
+def _signature_line(signature: dict) -> str:
+    if not signature or not signature.get("present"):
+        return "  unsigned"
+    who = signature.get("identity") or "unknown"
+    if not signature.get("ok"):
+        return f"  signed by {who} — and the signature does not match"
+    if signature.get("trusted"):
+        return f"  signed by {who}, and the key is the one you named"
+    return (f"  signed by {who} — the key is inside the capsule, so this "
+            "proves it is whole, not who wrote it")
+
+
+def render_capsule(result: dict, action: str) -> str:
+    if result.get("errors") and not result.get("manifest"):
+        return "\n".join(["Nothing done."] + [f"  {e}"
+                                              for e in result["errors"]])
+
+    manifest = result.get("manifest") or {}
+    lines = [f"{manifest.get('id') or result.get('playbook')} — "
+             f"{manifest.get('title') or ''}".strip(" —")]
+
+    if action == "export" and result.get("ok"):
+        lines.append(f"  written: {result['path']} ({result.get('size')} bytes)")
+        lines.append("  signed" if result.get("signed") else "  unsigned")
+        if result.get("note"):
+            lines.append(f"  {result['note']}")
+        return "\n".join(lines)
+
+    lines.append(f"  risk: {manifest.get('risk')}"
+                 + (f" | takes: {', '.join(manifest.get('takes') or [])}"
+                    if manifest.get("takes") else ""))
+    if manifest.get("installs"):
+        lines.append(f"  would install: {', '.join(manifest['installs'])}")
+    if manifest.get("requires"):
+        lines.append(f"  needs: {', '.join(manifest['requires'])}")
+    lines.append(_signature_line(result.get("signature") or {}))
+
+    for step in manifest.get("steps") or []:
+        lines.append(f"  $ {step}")
+    for step in manifest.get("rollback") or []:
+        lines.append(f"  undo: {step}")
+
+    if not result.get("intact"):
+        lines.append("  THIS DOES NOT MATCH ITS CHECKSUM — it was changed "
+                     "after it was written")
+    for problem in result.get("problems") or []:
+        lines.append(f"  broken: {problem}")
+    if result.get("clash"):
+        lines.append("  the name is taken by a shipped playbook")
+    if result.get("missing_checks"):
+        lines.append("  needs checks this phone does not have: "
+                     + ", ".join(result["missing_checks"]))
+
+    if result.get("installed"):
+        lines.append(f"  installed: {result.get('target')}")
+    elif result.get("reason") == "confirmation_required":
+        lines.append("  Send it again with confirmed: true to install it.")
+    for error in result.get("errors") or []:
+        lines.append(f"  {error}")
+    return "\n".join(line for line in lines if line.strip())
+
+
+def handle_capsule(handler, data: dict) -> None:
+    from ..capsule import export_capsule, import_capsule, preview_capsule
+
+    action = str(data.get("action") or "preview").strip().lower()
+    path = str(data.get("path") or "").strip()
+    playbook = str(data.get("playbook") or "").strip()
+
+    if action == "export":
+        result = export_capsule(playbook, sign_it=_flag(data, "sign"))
+    elif action == "import":
+        result = import_capsule(path, confirmed=_flag(data, "confirmed"),
+                                overwrite=_flag(data, "overwrite"),
+                                signer=str(data.get("signer") or ""))
+    else:
+        result = preview_capsule(path, signer=str(data.get("signer") or ""))
+
+    if str(data.get("format") or "").strip().lower() == "json":
+        json_response(handler, 200, result)
+        return
+    _text_response(handler, render_capsule(result, action))
+
+
 def render_undo(result: dict) -> str:
     if result.get("errors"):
         return "\n".join(str(error) for error in result["errors"])
