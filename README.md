@@ -216,6 +216,7 @@ Set `TERMUX_MCP_AUTH_TOKEN` to a value 16+ characters long to require authentica
 
 | Endpoint | Method | Parameters | Description |
 |---|---|---|---|
+| `/do` | POST | `text`, `dry_run`, `confirmed`, `format` | Do what the user asked, in their own words, when the phone already knows how. Matches their words to a playbook and fills its values — free, no model. If it is not known, nothing runs |
 | `/doctor` | POST | `check`, `fix`, `confirmed`, `task_id`, `format` (text/json) | Check this install for the things that break everyday work — missing tools, unlinked storage, a stuck package manager, no network. Reports and names the fix; with `fix: true` it applies each failing check's repair (its requirements first), then re-checks. Every repair command goes through the same risk gate, snapshots and journal as any other |
 | `/playbooks` | POST | `playbook`, `run`, `dry_run`, `with`, `confirmed`, `task_id`, `undo`, `format` | List the library, read one, run one, or undo a run. A run meets its requirements first, verifies each step, and writes a record — so the whole thing undoes as one unit |
 

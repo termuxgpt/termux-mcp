@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import signal
@@ -17,6 +18,7 @@ from .shell import preprocess, set_current_dir
 from .styling import STYLE_TOOLS, run_style_tool
 from .terminal import interactive_program, run_terminal_tool
 from .approval import APPROVAL_TOOLS, run_approval_tool
+from .playbook import requirement_ids
 from .utils import expand_home, kill_process_group, shell_quote, split_cd_chain
 from .websocket import _session_capture, _spawn_auto_input
 
@@ -292,12 +294,11 @@ NATIVE_TOOL_DEFS = [
         "name": "font",
         "description": (
             "Preview terminal text styles — figlet and toilet fonts — by "
-            "drawing a sample word in them. action: \"list\" names what is "
-            "installed (optionally filtered with query); action: \"preview\" "
-            "draws the sample in one or more fonts so the user can choose. "
-            "Nothing is installed or changed and no real terminal font is "
-            "touched — this only draws. Put the chosen font name into "
-            "banner_render to use it."
+            "drawing a sample word. action: \"list\" names what is installed "
+            "(query filters); action: \"preview\" draws it in one or more "
+            "fonts so the user can choose. Nothing is installed or changed, "
+            "and no real terminal font is touched. Put the chosen name into "
+            "banner_render."
         ),
         "inputSchema": {
             "type": "object",
@@ -366,11 +367,11 @@ NATIVE_TOOL_DEFS = [
     {
         "name": "ask",
         "description": (
-            "Ask the user for something with a real Android dialog rather "
-            "than guessing — text, number, radio, sheet, spinner, checkbox, "
-            "date, time or speech. Use it when the answer is a choice or a "
-            "value only they know, such as which folder, which port, or a "
-            "date. Returns what they chose, or that they cancelled."
+            "Ask the user with a real Android dialog rather than guessing — "
+            "text, number, radio, sheet, spinner, checkbox, date, time or "
+            "speech. Use it for a choice or a value only they know: which "
+            "folder, which port, which day. Returns what they chose, or that "
+            "they cancelled."
         ),
         "inputSchema": {
             "type": "object",
@@ -499,7 +500,7 @@ def active_session_count() -> int:
 def server_info() -> dict:
     return {
         "protocolVersion": cfg.DEFAULT_PROTOCOL_VERSION,
-        "capabilities": {"tools": {}},
+        "capabilities": {"tools": {}, "resources": {}},
         "serverInfo": {"name": cfg.SERVER_NAME, "version": cfg.SERVER_VERSION},
         "instructions": (
             "Termux shell + device tools on this Android device. Commands "
@@ -827,6 +828,82 @@ def call_tool(session: MCPSession, name: str, params: dict,
     return out
 
 
+PLAYBOOK_URI = "playbook://"
+LIBRARY_URI = "library://index"
+RUN_URI = "run://"
+
+
+def resource_list() -> dict:
+    from .playbook import list_runs, load_library
+
+    library = load_library()
+    resources = [{
+        "uri": LIBRARY_URI,
+        "name": "Playbook library",
+        "description": "Every task this phone can run with no model, and the "
+                       "checks it knows how to repair",
+        "mimeType": "application/json",
+    }]
+    for name, playbook in sorted(library["playbooks"].items()):
+        resources.append({
+            "uri": f"{PLAYBOOK_URI}{name}",
+            "name": playbook.get("title") or name,
+            "description": "; ".join(playbook.get("phrases") or []),
+            "mimeType": "application/json",
+        })
+    for record in list_runs(limit=10):
+        resources.append({
+            "uri": f"{RUN_URI}{record.get('task_id')}",
+            "name": f"Run {record.get('task_id')}",
+            "description": f"{record.get('playbook')} — "
+                           f"{'ok' if record.get('ok') else 'failed'}"
+                           + (" (undone)" if record.get("undone") else ""),
+            "mimeType": "application/json",
+        })
+    return {"resources": resources}
+
+
+def resource_read(uri: str) -> dict:
+    from .playbook import load_library, load_run
+
+    if uri.startswith(PLAYBOOK_URI):
+        name = uri[len(PLAYBOOK_URI):]
+        playbook = load_library()["playbooks"].get(name)
+        if playbook is None:
+            raise RpcError(INVALID_PARAMS, f"No playbook named {name}")
+        body = {k: v for k, v in playbook.items() if not k.startswith("_")}
+    elif uri.startswith(RUN_URI):
+        record = load_run(uri[len(RUN_URI):])
+        if record is None:
+            raise RpcError(INVALID_PARAMS, f"No run at {uri}")
+        body = record
+    elif uri == LIBRARY_URI:
+        library = load_library()
+        body = {
+            "playbooks": [
+                {"id": p["id"], "title": p.get("title"),
+                 "category": p.get("category"), "risk": p.get("risk", "safe"),
+                 "phrases": p.get("phrases") or [],
+                 "requires": requirement_ids(p),
+                 "uri": f"{PLAYBOOK_URI}{p['id']}"}
+                for p in sorted(library["playbooks"].values(),
+                                key=lambda p: p["id"])
+            ],
+            "checks": [
+                {"id": c["id"], "title": c.get("title"),
+                 "severity": c.get("severity"), "fix": c.get("fix")}
+                for c in sorted(library["checks"].values(),
+                                key=lambda c: c["id"])
+            ],
+            "problems": library["problems"],
+        }
+    else:
+        raise RpcError(INVALID_PARAMS, f"Unknown resource: {uri}")
+
+    return {"contents": [{"uri": uri, "mimeType": "application/json",
+                          "text": json.dumps(body, indent=1)}]}
+
+
 def dispatch(session: MCPSession, method: str, params,
              on_progress=None):
     if not isinstance(method, str) or not method:
@@ -858,6 +935,16 @@ def dispatch(session: MCPSession, method: str, params,
             progress = _ProgressProxy(session, meta["progressToken"],
                                       on_progress)
         return call_tool(session, name, args, on_progress=progress)
+    if method == "resources/list":
+        return resource_list()
+    if method == "resources/read":
+        params = params or {}
+        if not isinstance(params, dict):
+            raise RpcError(INVALID_PARAMS, "Invalid parameters")
+        uri = str(params.get("uri") or "")
+        if not uri:
+            raise RpcError(INVALID_PARAMS, "Missing uri")
+        return resource_read(uri)
     if method == "notifications/initialized":
         return None
     raise RpcError(METHOD_NOT_FOUND, f"Method not found: {method}")

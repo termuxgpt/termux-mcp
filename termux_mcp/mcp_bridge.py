@@ -21,7 +21,8 @@ from .handlers.terminal import (
     handle_diagnose, handle_backup, handle_restore,
     handle_changes_list, handle_undo,
 )
-from .handlers.doctor import handle_doctor, handle_playbooks
+from .handlers.doctor import (handle_do, handle_doctor,
+                              handle_playbooks)
 from .tools_schema import OPENAI_TOOLS
 
 
@@ -210,6 +211,7 @@ _INSTANCE_ROUTES = {
 
 
 _MODULE_ROUTES = {
+    "do": handle_do,
     "doctor": handle_doctor,
     "playbooks": handle_playbooks,
     "system_info": handle_system_info,

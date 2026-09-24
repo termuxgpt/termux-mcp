@@ -926,6 +926,22 @@ OPENAI_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "do",
+            "description": "Do what the user asked, in their words, when this phone already knows how — locally and free. Pass their words unchanged. If it is not known, nothing runs.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "The user's words, unchanged"},
+                    "dry_run": {"type": "boolean", "description": "Show the plan without running"},
+                    "confirmed": {"type": "boolean", "description": "Agree to steps that would otherwise ask"}
+                },
+                "required": ["text"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "doctor",
             "description": "Check this Termux install for the things that break everyday work — a missing tool, unlinked storage, a stuck package manager, no network. Read-only: it reports and names the fix, and changes nothing.",
             "parameters": {
@@ -990,7 +1006,7 @@ TOOL_CATEGORIES = {
     "terminal_send": "terminal", "terminal_read": "terminal",
     "terminal_list": "terminal", "terminal_close": "terminal",
     "history": "history", "history_save": "history", "history_clear": "history",
-    "doctor": "diagnose", "playbooks": "automation",
+    "do": "automation", "doctor": "diagnose", "playbooks": "automation",
     "theme_list": "appearance", "theme_preview": "appearance",
     "theme_apply": "appearance", "theme_revert": "appearance",
     "font": "appearance", "banner_render": "appearance",

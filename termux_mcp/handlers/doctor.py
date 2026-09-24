@@ -1,4 +1,5 @@
-from ..playbook import load_library, run_doctor, run_playbook, undo_run
+from ..playbook import (do_text, load_library, run_doctor, run_playbook,
+                        undo_run)
 from .terminal import _text_response
 from ..utils import json_response
 
@@ -166,6 +167,43 @@ def render_undo(result: dict) -> str:
         if not run["ok"] and run.get("text"):
             lines.append("    " + run["text"][:200])
     return "\n".join(lines)
+
+
+def render_do(result: dict, text: str) -> str:
+    if result.get("playbook"):
+        head = f"matched: {result['matched']}" if result.get("matched") else ""
+        return "\n".join(part for part in (head, render_run(result)) if part)
+
+    lines = []
+    if result.get("matched"):
+        lines.append(f"matched: {result['matched']}")
+    lines.append(f"{text.strip()!r}: nothing was run.")
+    for error in result.get("errors") or []:
+        lines.append(f"  {error}")
+
+    candidates = result.get("candidates") or []
+    for candidate in candidates:
+        needs = (f" — needs {', '.join(candidate['missing'])}"
+                 if candidate.get("missing") else "")
+        lines.append(f"  {candidate['playbook']} "
+                     f"({candidate['score']:.2f}): "
+                     f"{'; '.join(candidate['phrases'][:2])}{needs}")
+
+    if result.get("reason") == "unknown":
+        library = load_library()
+        lines.append("  known: " + ", ".join(sorted(library["playbooks"])))
+    return "\n".join(lines)
+
+
+def handle_do(handler, data: dict) -> None:
+    text = str(data.get("text") or data.get("say") or "").strip()
+    result = do_text(text, confirmed=_flag(data, "confirmed"),
+                     dry_run=_flag(data, "dry_run"))
+
+    if str(data.get("format") or "").strip().lower() == "json":
+        json_response(handler, 200, result)
+        return
+    _text_response(handler, render_do(result, text))
 
 
 def handle_playbooks(handler, data: dict) -> None:

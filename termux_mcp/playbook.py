@@ -466,9 +466,124 @@ def run_check(check: dict, timeout: int = PROBE_TIMEOUT) -> dict:
                 code=done.returncode)
 
 
+MIN_CONFIDENCE = 0.5
+
+STOPWORDS = frozenset(
+    "a an the this that these those my your our their please can you could "
+    "would to for of in on at it is are be and or with me i".split()
+)
+
+EXTRACTORS = {
+    "repo": re.compile(
+        r"(?:https?://github\.com/)?([\w.-]+/[\w.-]+?)(?:\.git)?(?:\s|$)",
+        re.IGNORECASE),
+    "url": re.compile(r"https?://[^\s\"']+", re.IGNORECASE),
+    "path": re.compile(
+        r"(?<![\w:/~])(~\S+|/(?:[\w.-]+)(?:/[\w.-]+)*)"),
+    "port": re.compile(r"\b(\d{2,5})\b"),
+    "host": re.compile(r"\b(?:[\w-]+\.)+[a-z]{2,}\b", re.IGNORECASE),
+    "ssid": re.compile(r"[\"']([^\"']{1,32})[\"']"),
+    "name": re.compile(r"[\"']([^\"']{1,40})[\"']"),
+    "command": re.compile(r"`([^`]+)`"),
+    "package": re.compile(
+        r"\b(?:pkg\s+|apt\s+)?install\s+(?:the\s+)?(?:package\s+)?"
+        r"([\w.+-]+)", re.IGNORECASE),
+}
+
+MAX_CANDIDATES = 3
+
 MAX_REPAIRS = 6
 MAX_RUNS_KEPT = 50
 MAX_RECORD_TEXT = 400
+
+
+def words(text) -> set:
+    found = re.findall(r"[a-z0-9_]+", str(text or "").lower())
+    return {word for word in found if word not in STOPWORDS and len(word) > 1}
+
+
+def phrase_score(text, phrase) -> float:
+    wanted = words(phrase)
+    if not wanted:
+        return 0.0
+    return len(wanted & words(text)) / len(wanted)
+
+
+def score_playbook(text, playbook: dict) -> float:
+    best = 0.0
+    for phrase in playbook.get("phrases") or []:
+        best = max(best, phrase_score(text, phrase))
+    if best < 1.0:
+        best = max(best, 0.9 * phrase_score(text, playbook.get("title") or ""))
+    return round(best, 3)
+
+
+def extract_inputs(playbook: dict, text: str):
+    values, missing = {}, []
+    for slot, spec in _slots(playbook).items():
+        if not isinstance(spec, dict) or spec.get("from"):
+            continue
+        pattern = EXTRACTORS.get(str(spec.get("type")))
+        if pattern is not None:
+            found = pattern.search(str(text or ""))
+            if found:
+                values[slot] = (found.group(1) if found.groups()
+                                else found.group(0))
+                continue
+        if "default" in spec or spec.get("from"):
+            continue
+        if spec.get("required"):
+            missing.append(slot)
+    return values, missing
+
+
+def match_text(text: str, playbooks=None) -> list:
+    if playbooks is None:
+        playbooks = load_playbooks()[0]
+    scored = []
+    for name, playbook in playbooks.items():
+        score = score_playbook(text, playbook)
+        if score <= 0:
+            continue
+        values, missing = extract_inputs(playbook, text)
+        scored.append({
+            "playbook": name, "title": playbook.get("title"),
+            "category": playbook.get("category"), "score": score,
+            "inputs": values, "missing": missing,
+            "phrases": playbook.get("phrases") or [],
+        })
+    scored.sort(key=lambda item: (-item["score"], item["playbook"]))
+    return scored
+
+
+def do_text(text: str, confirmed: bool = False, dry_run: bool = False,
+            playbooks=None) -> dict:
+    text = str(text or "").strip()
+    if not text:
+        return {"ok": False, "reason": "empty", "errors": ["Nothing to do."],
+                "candidates": []}
+
+    candidates = match_text(text, playbooks)
+    if not candidates:
+        return {"ok": False, "reason": "unknown", "candidates": [],
+                "errors": ["Nothing in the library does that yet."]}
+
+    best = candidates[0]
+    if best["score"] < MIN_CONFIDENCE:
+        return {"ok": False, "reason": "unsure", "candidates": candidates[:MAX_CANDIDATES],
+                "errors": ["Not sure which of these you mean."]}
+
+    if best["missing"]:
+        return {"ok": False, "reason": "missing_input",
+                "matched": best["playbook"],
+                "candidates": candidates[:MAX_CANDIDATES],
+                "errors": [f"{best['playbook']} needs: "
+                           f"{', '.join(best['missing'])}"]}
+
+    result = run_playbook(best["playbook"], best["inputs"], confirmed=confirmed,
+                          dry_run=dry_run)
+    return dict(result, matched=best["playbook"], score=best["score"],
+                candidates=candidates[:MAX_CANDIDATES])
 
 
 def new_task_id(playbook_id: str) -> str:
