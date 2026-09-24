@@ -212,6 +212,19 @@ Set `TERMUX_MCP_AUTH_TOKEN` to a value 16+ characters long to require authentica
 | `/microphone-record` | POST | `output`, `limit_seconds`, `action` | Microphone recording |
 | `/wallpaper` | POST | `file`, `lockscreen` | Set wallpaper |
 
+### Doctor & Playbooks
+
+| Endpoint | Method | Parameters | Description |
+|---|---|---|---|
+| `/doctor` | POST | `check` (one id or several, comma separated), `format` (text/json) | Check this install for the things that break everyday work — missing tools, unlinked storage, a stuck package manager, no network. **Read-only**: it reports and names the fix, and changes nothing |
+| `/playbooks` | POST | `playbook` (optional id) | List the local playbook library — the tasks this phone can run with no model — or read one in full |
+
+Playbooks are declarative, one JSON file each, and validated when they load:
+phrases, typed slots, preconditions, steps with a verification, and the line
+to say afterwards. The doctor's checks are the same objects — a check is a
+probe with a fix, and a playbook's `requires` names a check. See
+[docs/playbooks-plan.md](docs/playbooks-plan.md).
+
 ### Smart Tools
 
 | Endpoint | Method | Parameters | Description |

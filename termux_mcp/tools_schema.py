@@ -923,6 +923,33 @@ OPENAI_TOOLS = [
             "parameters": {"type": "object", "properties": {}}
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "doctor",
+            "description": "Check this Termux install for the things that break everyday work — a missing tool, unlinked storage, a stuck package manager, no network. Read-only: it reports and names the fix, and changes nothing.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "check": {"type": "string", "description": "One check id, or several separated by commas"},
+                    "format": {"type": "string", "enum": ["text", "json"], "description": "json gives structured findings"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "playbooks",
+            "description": "List the local playbook library — the tasks this phone can run without a model — or read one in full by id.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "playbook": {"type": "string", "description": "An id from the list, for the full definition"}
+                }
+            }
+        }
+    },
 ]
 
 # ── Tool categories (used by the /catalog endpoint) ──────────────────────
@@ -955,6 +982,7 @@ TOOL_CATEGORIES = {
     "terminal_send": "terminal", "terminal_read": "terminal",
     "terminal_list": "terminal", "terminal_close": "terminal",
     "history": "history", "history_save": "history", "history_clear": "history",
+    "doctor": "diagnose", "playbooks": "automation",
     "theme_list": "appearance", "theme_preview": "appearance",
     "theme_apply": "appearance", "theme_revert": "appearance",
     "font": "appearance", "banner_render": "appearance",
