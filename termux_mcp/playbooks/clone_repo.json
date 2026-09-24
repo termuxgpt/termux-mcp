@@ -15,5 +15,8 @@
     {"run": "test -d {dir}/{name} || git clone https://github.com/{repo}.git {dir}/{name}",
      "verify": "test -d {dir}/{name}/.git"}
   ],
+  "rollback": [
+    {"tool": "delete", "with": {"path": "{dir}/{name}", "recursive": true}}
+  ],
   "success": "Cloned {repo} into {dir}/{name}."
 }
