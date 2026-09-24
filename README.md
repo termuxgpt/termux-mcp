@@ -41,7 +41,6 @@ RikkaHub (same phone):
 
 Desktop MCP client (over ssh): `{"command": "ssh", "args": ["android", "termux-native-mcp", "--stdio"]}`
 
-Full guide, env vars and tool list: **[docs/mcp.md](docs/mcp.md)**.
 Both servers share the same safety system (risk gates, file snapshots,
 trash) because they run the same handler code.
 
@@ -229,8 +228,7 @@ probe with a fix, and a playbook's `requires` names a check. Ten ship with
 the package (update and upgrade, install anything, clone a repo, storage
 setup, check space, find what is eating it, clear the package cache, battery,
 wifi, an SSH key); `harvest` adds more, saved under `~/termuxGPT/playbooks/`
-and loaded alongside the shipped ones. See
-[docs/playbooks-plan.md](docs/playbooks-plan.md).
+and loaded alongside the shipped ones.
 
 ### Smart Tools
 
