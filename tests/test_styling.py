@@ -1,11 +1,13 @@
 import json
 import os
+import shutil
 import sys
+import tempfile
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from termux_mcp import styling
+from termux_mcp import changes, safety, styling
 from termux_mcp.styling import (_colors_body, _parse, find_theme, load_themes,
                                 run_style_tool)
 
@@ -139,7 +141,7 @@ class TestTools:
         # It changes nothing, so it must not spend a confirmation — and it must
         # not be mistaken for an apply by whoever reads the result.
         text = run_style_tool("theme_preview", {"theme": "dracula"})["text"]
-        assert styling.CONFIRM_MARKER not in text
+        assert "confirmed: true" not in text
         assert "Nothing has been changed" in text
 
     def test_preview_writes_nothing(self):
@@ -194,16 +196,20 @@ class TestTools:
     def test_apply_requires_confirmation(self):
         result = run_style_tool("theme_apply", {"theme": "dracula"})
         assert not result["is_error"]
-        assert styling.CONFIRM_MARKER in result["text"]
-        assert "confirmation_required" in result["text"]
+        assert "confirmed: true" in result["text"]
+        assert "Nothing has changed" in result["text"]
 
     def test_revert_requires_confirmation(self):
-        assert styling.CONFIRM_MARKER in run_style_tool("theme_revert", {})["text"]
+        assert "confirmed: true" in run_style_tool("theme_revert", {})["text"]
 
     def test_revert_accepts_both_targets(self):
         for target in ("previous", "default"):
             result = run_style_tool("theme_revert", {"to": target})
-            assert styling.CONFIRM_MARKER in result["text"]
+            assert "confirmed: true" in result["text"]
+
+    def test_the_confirmation_names_no_internal_marker(self):
+        text = run_style_tool("theme_apply", {"theme": "dracula"})["text"]
+        assert "TERMUX_" not in text
 
     def test_unknown_theme_is_an_error(self):
         result = run_style_tool("theme_apply",
@@ -222,6 +228,63 @@ class TestTools:
         assert "foreground=" not in body
         assert "background=" not in body
         assert "color0=" in body
+
+
+class TestThemeChangesAreJournaled:
+
+    def setup_method(self):
+        self.root = tempfile.mkdtemp(prefix="mcp-style-")
+        self.path = os.path.join(self.root, ".termux", "colors.properties")
+        self._colors = styling.COLORS_PATH
+        self._home = styling.HOME
+        self._safety_home = safety.HOME
+        styling.COLORS_PATH = self.path
+        styling.HOME = self.root
+        safety.HOME = self.root
+
+    def teardown_method(self):
+        styling.COLORS_PATH = self._colors
+        styling.HOME = self._home
+        safety.HOME = self._safety_home
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def _journal(self):
+        return [e for e in changes.read(safety.safety_root(""), limit=200)
+                if e.get("path") == self.path]
+
+    def _write_existing(self, theme_name):
+        theme = find_theme(theme_name)
+        assert theme is not None
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        body = _colors_body(theme)
+        with open(self.path, "w", encoding="utf-8") as handle:
+            handle.write(body)
+        return body
+
+    def test_a_first_apply_is_recorded(self):
+        assert not os.path.exists(self.path)
+        result = run_style_tool("theme_apply", {"theme": "dracula",
+                                                "confirmed": True})
+        assert not result["is_error"]
+        assert os.path.exists(self.path)
+        assert [e["kind"] for e in self._journal()] == [changes.CREATE]
+
+    def test_an_overwrite_is_recorded_with_a_snapshot(self):
+        original = self._write_existing("dracula")
+        run_style_tool("theme_apply", {"theme": "nord", "confirmed": True})
+        entries = self._journal()
+        assert [e["kind"] for e in entries] == [changes.MODIFY]
+        assert entries[0]["snapshot"]
+        with open(entries[0]["snapshot"], encoding="utf-8") as handle:
+            assert handle.read() == original
+
+    def test_resetting_to_default_trashes_rather_than_deletes(self):
+        self._write_existing("dracula")
+        run_style_tool("theme_revert", {"to": "default", "confirmed": True})
+        assert not os.path.exists(self.path)
+        entries = self._journal()
+        assert [e["kind"] for e in entries] == [changes.DELETE]
+        assert os.path.exists(entries[0]["trash"])
 
 
 class TestFonts:

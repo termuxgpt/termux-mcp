@@ -5,7 +5,7 @@ import shutil
 import subprocess
 
 from .config import HOME
-from .safety import safety_root, snapshot_before_write
+from .safety import safety_root, snapshot_before_write, trash_path
 from .utils import is_sensitive_path
 
 THEMES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "themes")
@@ -13,7 +13,6 @@ THEMES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "themes")
 COLORS_PATH = os.path.join(HOME, ".termux", "colors.properties")
 
 THEME_JSON_MARKER = "TERMUX_THEME:"
-CONFIRM_MARKER = "TERMUX_CONFIRM:"
 
 _KEYS = ("background", "foreground", "cursor") + tuple(
     f"color{i}" for i in range(22)
@@ -124,16 +123,10 @@ def _preview_text(theme: dict) -> str:
             + "\n\n" + _theme_json(theme))
 
 
-def _needs_confirm(action: str, theme_id: str) -> str:
-    payload = {
-        "status": "confirmation_required",
-        "action": action,
-        "theme": theme_id,
-        "path": COLORS_PATH,
-    }
-    return ("This rewrites how every shell on this device looks.\n\n"
-            + CONFIRM_MARKER
-            + json.dumps(payload, separators=(",", ":")))
+def _needs_confirm() -> str:
+    return ("Nothing has changed: this rewrites how every shell on this "
+            "device looks. Put it to the user, then call it again with "
+            "confirmed: true.")
 
 
 def _reload():
@@ -344,13 +337,12 @@ def run_style_tool(name: str, params: dict) -> dict:
             return {"text": _no_such_theme(wanted), "is_error": True}
 
         if is_sensitive_path(COLORS_PATH) and not p.get("confirmed"):
-            return {"text": _needs_confirm("theme_apply", theme["id"]),
+            return {"text": _needs_confirm(),
                     "is_error": False}
 
         try:
             os.makedirs(os.path.dirname(COLORS_PATH), exist_ok=True)
-            if os.path.exists(COLORS_PATH):
-                snapshot_before_write(COLORS_PATH, tool="theme_apply")
+            snapshot_before_write(COLORS_PATH, tool="theme_apply")
             with open(COLORS_PATH, "w", encoding="utf-8") as handle:
                 handle.write(_colors_body(theme))
         except OSError as e:
@@ -369,14 +361,13 @@ def run_style_tool(name: str, params: dict) -> dict:
         to_previous = str(p.get("to") or "previous").strip().lower() != "default"
 
         if not p.get("confirmed"):
-            return {"text": _needs_confirm("theme_revert", ""),
+            return {"text": _needs_confirm(),
                     "is_error": False}
 
         if not to_previous:
             if os.path.exists(COLORS_PATH):
                 try:
-                    snapshot_before_write(COLORS_PATH, tool="theme_revert")
-                    os.remove(COLORS_PATH)
+                    trash_path(COLORS_PATH, tool="theme_revert")
                 except OSError as e:
                     return {"text": f"Could not reset: {e}", "is_error": True}
             reloaded = _reload()
@@ -398,8 +389,7 @@ def run_style_tool(name: str, params: dict) -> dict:
             }
         try:
             os.makedirs(os.path.dirname(COLORS_PATH), exist_ok=True)
-            if os.path.exists(COLORS_PATH):
-                snapshot_before_write(COLORS_PATH, tool="theme_revert")
+            snapshot_before_write(COLORS_PATH, tool="theme_revert")
             shutil.copy2(snapshot, COLORS_PATH)
         except OSError as e:
             return {"text": f"Could not restore: {e}", "is_error": True}
