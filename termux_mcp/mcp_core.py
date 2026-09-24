@@ -16,6 +16,7 @@ from .security import get_risk_assessment
 from .shell import preprocess, set_current_dir
 from .styling import STYLE_TOOLS, run_style_tool
 from .terminal import interactive_program, run_terminal_tool
+from .approval import APPROVAL_TOOLS, run_approval_tool
 from .utils import expand_home, kill_process_group, shell_quote, split_cd_chain
 from .websocket import _session_capture, _spawn_auto_input
 
@@ -332,6 +333,34 @@ NATIVE_TOOL_DEFS = [
                          "description": "figlet font name, optional"},
             },
             "required": ["text"],
+        },
+    },
+    {
+        "name": "approve",
+        "description": (
+            "Ask the user to approve one exact action on the device itself — "
+            "their fingerprint, or a dialog when no fingerprint is enrolled. "
+            "Use this before a command the risk gate calls risky, so the "
+            "user sees what is about to run. The approval lasts a few "
+            "minutes and is spent when that same action runs."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "description": "The exact command or action, verbatim",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "One line shown to the user",
+                },
+                "method": {
+                    "type": "string", "enum": ["fingerprint", "dialog"],
+                    "description": "Defaults to fingerprint",
+                },
+            },
+            "required": ["action"],
         },
     },
 ]
@@ -703,6 +732,8 @@ def invoke_tool(session: MCPSession, name: str, params: dict,
                     return _tool_terminal(session, name, p)
                 if name in STYLE_TOOLS:
                     return run_style_tool(name, p)
+                if name in APPROVAL_TOOLS:
+                    return run_approval_tool(name, p)
                 return _tool_session(session, name, p)
 
         route = mcp_bridge.route_callable(name)

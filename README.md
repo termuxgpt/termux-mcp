@@ -257,6 +257,7 @@ Set `TERMUX_MCP_AUTH_TOKEN` to a value 16+ characters long to require authentica
 | Endpoint | Method | Parameters | Description |
 |---|---|---|---|
 | `/ping` | GET | | Health check |
+| `/approve` | POST | `action`, `reason`, `method` | Ask the user to approve one exact action on the device — their fingerprint, or a dialog when no fingerprint is enrolled. An approved action runs once, within 3 minutes |
 | `/tools` | GET | | Full OpenAI-format tool schemas for all tools (function-calling ready) |
 | `/catalog` | GET | | Compact tool catalog: `{name, desc, params, category}` per tool — small enough to embed in an LLM system prompt or a `use_tool` meta-tool |
 | `/env` | GET | | Environment info (cwd, home, pid) |
@@ -284,7 +285,9 @@ For long-running commands, a watchdog thread enforces the timeout. Package insta
   (e.g. `rm -rf /`, `mkfs.`, writes to `/dev/`, `chmod -R 777`) is refused on
   every shell-backed endpoint — the check lives in the shared executor, so a
   new endpoint cannot forget it. The `WARNING` tier (package removals,
-  recursive deletes) requires an explicit `confirmed: true` on `/run`.
+  recursive deletes) requires an explicit `confirmed: true` on `/run`, or an
+  approval for that exact command taken from the device with `/approve` —
+  which costs the user a fingerprint instead of a tap.
 - **Sensitive writes.** `/write` and `/patch` can edit anything outside
   `/dev`, `/proc` and `/sys` — that is the point of them — but paths that
   grant persistence require confirmation: `~/.ssh/`, `~/.bashrc`,

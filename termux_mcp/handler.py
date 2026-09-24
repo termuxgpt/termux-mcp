@@ -36,6 +36,8 @@ from .utils import (
 from .tools_schema import OPENAI_TOOLS, build_catalog
 from .styling import STYLE_TOOLS, run_style_tool
 from .terminal import TERMINAL_TOOLS, run_terminal_tool
+from .approval import APPROVAL_TOOLS, run_approval_tool
+from . import approval
 from . import websocket as ws
 from .safety import snapshot_before_write, snapshot_targets_from_command, trash_path
 from .security import get_risk_assessment
@@ -574,17 +576,21 @@ class MCPHandler(BaseHTTPRequestHandler):
             return
 
         tool = path.lstrip("/")
-        if tool in TERMINAL_TOOLS or tool in STYLE_TOOLS:
-            result = (run_style_tool(tool, data) if tool in STYLE_TOOLS
-                      else run_terminal_tool(tool, data))
-            payload = {"output": result.get("text", ""),
-                       "is_error": bool(result.get("is_error"))}
-            if "terminal" in result:
-                payload["session"] = result["terminal"]
-            json_response(self, 200, payload)
+        if tool in STYLE_TOOLS:
+            result = run_style_tool(tool, data)
+        elif tool in TERMINAL_TOOLS:
+            result = run_terminal_tool(tool, data)
+        elif tool in APPROVAL_TOOLS:
+            result = run_approval_tool(tool, data)
+        else:
+            json_response(self,404, {"error": "Not found"})
             return
 
-        json_response(self,404, {"error": "Not found"})
+        payload = {"output": result.get("text", ""),
+                   "is_error": bool(result.get("is_error"))}
+        if "terminal" in result:
+            payload["session"] = result["terminal"]
+        json_response(self, 200, payload)
 
     # ── Handlers ────────────────────────────────────────────────────────────
 
@@ -606,13 +612,16 @@ class MCPHandler(BaseHTTPRequestHandler):
 
         if risk["requires_confirmation"]:
             # Return the risk assessment — client must re-send with confirmed: true
-            if not data.get("confirmed"):
+            if not data.get("confirmed") and not approval.spend(cmd):
                 json_response(self,200, {
                     "status": "confirmation_required",
                     "command": cmd,
                     "risk_level": risk["risk_level"],
                     "message": risk["message"],
                     "requires_confirmation": True,
+                    "hint": "Re-send with confirmed: true, or approve this "
+                            "exact command on the device with the approve "
+                            "tool first.",
                 })
                 return
 
