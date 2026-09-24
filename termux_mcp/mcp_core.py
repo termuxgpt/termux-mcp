@@ -363,6 +363,49 @@ NATIVE_TOOL_DEFS = [
             "required": ["action"],
         },
     },
+    {
+        "name": "ask",
+        "description": (
+            "Ask the user for something with a real Android dialog rather "
+            "than guessing — text, number, radio, sheet, spinner, checkbox, "
+            "date, time or speech. Use it when the answer is a choice or a "
+            "value only they know, such as which folder, which port, or a "
+            "date. Returns what they chose, or that they cancelled."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "widget": {
+                    "type": "string",
+                    "enum": ["text", "number", "radio", "sheet", "spinner",
+                             "checkbox", "date", "time", "speech"],
+                    "description": "Defaults to text",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "The question, kept short",
+                },
+                "hint": {
+                    "type": "string",
+                    "description": "Placeholder, for text and speech",
+                },
+                "values": {
+                    "type": "array", "items": {"type": "string"},
+                    "description": "The choices, for radio, sheet, spinner "
+                                   "and checkbox. No backslashes.",
+                },
+                "multiline": {
+                    "type": "boolean",
+                    "description": "Let text run to several lines",
+                },
+                "format": {
+                    "type": "string",
+                    "description": "Date format, for date",
+                },
+            },
+            "required": ["widget"],
+        },
+    },
 ]
 
 

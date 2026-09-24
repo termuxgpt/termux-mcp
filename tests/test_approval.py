@@ -205,6 +205,124 @@ class TestOutcomeMarker:
                                                                  {})["text"]
 
 
+class TestAsk:
+
+    def _argv(self, params):
+        with mock.patch("subprocess.run") as run:
+            run.return_value = _done(json.dumps({"code": -1, "text": "ok"}))
+            approval.run_ask_tool(params)
+        return run.call_args[0][0]
+
+    def test_text_answer(self):
+        with mock.patch("subprocess.run",
+                        return_value=_done(json.dumps({"code": -1,
+                                                       "text": "8080"}))):
+            out = approval.run_ask_tool({"widget": "text",
+                                         "title": "Which port?"})
+        assert out["is_error"] is False
+        assert "8080" in out["text"]
+
+    def test_title_and_hint(self):
+        argv = self._argv({"widget": "text", "title": "Where?",
+                           "hint": "a folder"})
+        assert argv == ["termux-dialog", "text", "-t", "Where?",
+                        "-i", "a folder"]
+
+    def test_defaults_to_text(self):
+        assert self._argv({})[1] == "text"
+
+    def test_number_gets_the_numeric_flag(self):
+        assert "-n" in self._argv({"widget": "number"})
+
+    def test_multiline_only_applies_to_text(self):
+        assert "-m" in self._argv({"widget": "text", "multiline": True})
+        assert "-m" not in self._argv({"widget": "speech",
+                                       "multiline": True})
+
+    def test_hint_is_not_sent_to_choice_widgets(self):
+        argv = self._argv({"widget": "radio", "values": ["a", "b"],
+                           "hint": "pick one"})
+        assert "-i" not in argv
+
+    def test_choices_are_comma_joined(self):
+        argv = self._argv({"widget": "radio", "values": ["a", "b", "c"]})
+        assert argv[argv.index("-v") + 1] == "a,b,c"
+
+    def test_a_comma_inside_a_choice_is_escaped(self):
+        argv = self._argv({"widget": "radio",
+                           "values": ["Arch, rolling", "Debian stable"]})
+        assert argv[argv.index("-v") + 1] == "Arch\\, rolling,Debian stable"
+
+    def test_a_backslash_in_a_choice_is_refused(self):
+        out = approval.run_ask_tool({"widget": "radio",
+                                     "values": ["C:\\Users"]})
+        assert out["is_error"] is True
+        assert "backslash" in out["text"]
+
+    def test_choices_are_required(self):
+        out = approval.run_ask_tool({"widget": "spinner"})
+        assert out["is_error"] is True
+        assert "values" in out["text"]
+
+    def test_checkbox_returns_every_tick(self):
+        payload = {"code": -1, "text": "",
+                   "values": [{"index": 0, "text": "logs"},
+                              {"index": 2, "text": "cache"}]}
+        with mock.patch("subprocess.run", return_value=_done(json.dumps(payload))):
+            out = approval.run_ask_tool({"widget": "checkbox",
+                                         "values": ["logs", "tmp", "cache"]})
+        assert out["is_error"] is False
+        assert "logs, cache" in out["text"]
+
+    def test_date_takes_a_format(self):
+        argv = self._argv({"widget": "date", "format": "dd-MM-yyyy"})
+        assert argv[argv.index("-d") + 1] == "dd-MM-yyyy"
+
+    def test_time_ignores_a_date_format(self):
+        assert "-d" not in self._argv({"widget": "time",
+                                       "format": "dd-MM-yyyy"})
+
+    def test_cancel_is_reported(self):
+        with mock.patch("subprocess.run",
+                        return_value=_done(json.dumps({"code": -2}))):
+            out = approval.run_ask_tool({"widget": "text"})
+        assert out["is_error"] is True
+        assert "cancelled" in out["text"]
+
+    def test_ok_with_nothing_typed(self):
+        with mock.patch("subprocess.run",
+                        return_value=_done(json.dumps({"code": -1,
+                                                       "text": ""}))):
+            out = approval.run_ask_tool({"widget": "text"})
+        assert out["is_error"] is True
+        assert "no answer" in out["text"]
+
+    def test_unknown_widget(self):
+        out = approval.run_ask_tool({"widget": "hologram"})
+        assert out["is_error"] is True
+        assert "Unknown widget" in out["text"]
+
+    def test_dialog_error_is_reported(self):
+        payload = json.dumps({"code": 0, "error": "Unknown Input Method"})
+        with mock.patch("subprocess.run", return_value=_done(payload)):
+            out = approval.run_ask_tool({"widget": "text"})
+        assert out["is_error"] is True
+        assert "Unknown Input Method" in out["text"]
+
+    def test_missing_termux_api(self):
+        with mock.patch("subprocess.run", side_effect=FileNotFoundError):
+            out = approval.run_ask_tool({"widget": "text"})
+        assert out["is_error"] is True
+        assert "termux-api" in out["text"]
+
+    def test_the_ask_tool_is_reachable_by_name(self):
+        with mock.patch("subprocess.run",
+                        return_value=_done(json.dumps({"code": -1,
+                                                       "text": "yes"}))):
+            out = run_approval_tool("ask", {"widget": "text"})
+        assert out["is_error"] is False
+
+
 class TestHeldApprovals:
 
     def setup_method(self):

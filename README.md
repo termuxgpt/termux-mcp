@@ -258,6 +258,7 @@ Set `TERMUX_MCP_AUTH_TOKEN` to a value 16+ characters long to require authentica
 |---|---|---|---|
 | `/ping` | GET | | Health check |
 | `/approve` | POST | `action`, `reason`, `method` | Ask the user to approve one exact action on the device — their fingerprint, or a dialog when no fingerprint is enrolled. An approved action runs once, within 3 minutes |
+| `/ask` | POST | `widget`, `title`, `hint`, `values`, `multiline`, `format` | Ask the user for input with a native Android dialog: text, number, radio, sheet, spinner, checkbox, date, time or speech. `values` are the choices; commas inside one are fine, backslashes are not |
 | `/tools` | GET | | Full OpenAI-format tool schemas for all tools (function-calling ready) |
 | `/catalog` | GET | | Compact tool catalog: `{name, desc, params, category}` per tool — small enough to embed in an LLM system prompt or a `use_tool` meta-tool |
 | `/env` | GET | | Environment info (cwd, home, pid) |
