@@ -141,6 +141,8 @@ Set `TERMUX_MCP_AUTH_TOKEN` to a value 16+ characters long to require authentica
 | `/backup` | POST | `target` (home/packages/configs), `output`, `include` | Create a tar.gz backup of home, packages, or configs |
 | `/restore` | POST | `file`, `target` | Restore from a backup file |
 | `/cloud-sync` | POST | `action` (backup/restore/list), `target`, `output`, `file` | Create backups and provide cloud upload instructions |
+| `/changes_list` | POST | `format` (json/text), `limit`, `since`, `task_id` | Every file write, delete and trash the safety layer recorded, newest first, with a `revertable` flag |
+| `/undo` | POST | `path`, `limit`, `since`, `task_id`, `confirmed` | Put files back to their earlier contents from the snapshots. Needs `confirmed: true`, since an undo is itself undone by taking a snapshot first |
 
 ### Code & Files
 

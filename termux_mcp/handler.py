@@ -17,7 +17,8 @@ from .handlers.terminal import (
     handle_diagnose, handle_pkg_smart, handle_explain, handle_dev_env,
     handle_review, handle_log_analyze, handle_script_gen, handle_deps_tree,
     handle_storage_audit, handle_config_fix, handle_git_smart, handle_regex,
-    handle_db_design, handle_backup, handle_restore,
+    handle_db_design, handle_backup, handle_restore, handle_changes_list,
+    handle_undo,
 )
 from .handlers.features import (
     handle_system_info, handle_process_list, handle_process_kill,
@@ -565,6 +566,14 @@ class MCPHandler(BaseHTTPRequestHandler):
             return
         if path == "/context-save":
             handle_context_save(self, data)
+            return
+
+        if path == "/changes_list":
+            handle_changes_list(self, data)
+            return
+
+        if path == "/undo":
+            handle_undo(self, data)
             return
 
         if path == "/history":

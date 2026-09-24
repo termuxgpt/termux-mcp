@@ -334,6 +334,17 @@ def _ws_send_json(sock, conn: dict, data: dict) -> None:
     _send_frame(sock, conn, json.dumps(data).encode())
 
 
+def _ws_bridge_tool(tool: str, params: dict):
+    from . import mcp_bridge
+
+    route = mcp_bridge.route_callable(tool)
+    if route is None:
+        return None
+    vh = mcp_bridge.VirtualHandler()
+    route(vh, params)
+    return mcp_bridge.decode_virtual(vh)
+
+
 def _ws_reply(sock, conn, req_id, data: dict) -> None:
     """Send a tool result WITH the request id — the client completes the
     pending request only when it sees `_id`. Without this every WS call
@@ -955,7 +966,14 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         return
 
     else:
-        _ws_reply(sock, conn, req_id,{"error": f"Unknown tool: {tool}"})
+        result = _ws_bridge_tool(tool, p)
+        if result is None:
+            _ws_reply(sock, conn, req_id,{"error": f"Unknown tool: {tool}"})
+            return
+        _ws_reply(sock, conn, req_id, {
+            "output": result.get("text", ""),
+            "is_error": bool(result.get("is_error")),
+        })
         return
 
     if cmd:
