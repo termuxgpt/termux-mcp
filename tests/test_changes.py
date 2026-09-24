@@ -354,6 +354,45 @@ class TestSafetyWiring:
         assert entry["tool"] == "run"
         assert entry["cmd"].startswith("sed -i")
 
+    def test_a_redirect_that_creates_a_file_is_journalled(self):
+        path = self.target("fresh.txt")
+        safety.snapshot_targets_from_command(f"echo hello > {path}", "t1")
+        entry = changes.read(self.root)[0]
+        assert entry["kind"] == changes.CREATE
+        assert entry["path"] == path
+
+    def test_a_redirect_over_an_existing_file_is_snapshotted(self):
+        path = self.target("there.txt", "v1")
+        snaps = safety.snapshot_targets_from_command(
+            f"echo hello > {path}", "t1")
+        assert len(snaps) == 1
+        assert os.path.exists(snaps[0])
+        entry = changes.read(self.root)[0]
+        assert entry["kind"] == changes.MODIFY
+        assert entry["snapshot"] == snaps[0]
+
+    def test_a_fd_redirect_is_not_a_file(self):
+        safety.snapshot_targets_from_command("make 2>&1 | tail -5", "t1")
+        assert changes.read(self.root) == []
+
+    def test_dev_null_is_not_journalled(self):
+        safety.snapshot_targets_from_command("ls -la > /dev/null 2>&1", "t1")
+        assert changes.read(self.root) == []
+
+    def test_command_substitution_is_not_a_path(self):
+        safety.snapshot_targets_from_command("echo x > $(date).txt", "t1")
+        assert changes.read(self.root) == []
+
+    def test_home_expands_in_a_redirect_target(self):
+        safety.snapshot_targets_from_command("echo x > $HOME/thing", "t1")
+        assert changes.read(self.root)[0]["path"] == \
+            os.path.join(self.home, "thing")
+
+    def test_the_task_id_reaches_the_journal(self):
+        path = self.target("tagged.txt")
+        safety.snapshot_targets_from_command(f"echo hi > {path}", "run-42")
+        assert changes.read(self.root)[0]["task"] == "run-42"
+
     def test_the_safety_area_itself_is_never_journalled(self):
         path = self.target("termuxGPT/snapshots/x/y", "no")
         safety.snapshot_before_write(path)

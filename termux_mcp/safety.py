@@ -180,10 +180,16 @@ def snapshot_targets_from_command(cmd: str, task_id: str = "") -> List[str]:
             cwd = base
 
     def add(token: str) -> None:
+        if not token or re.search(r"[&|;<>`]", token):
+            return
+        if "$" in token and not token.startswith("$HOME"):
+            return
         path = _expand_shell_path(token, cwd)
         if not path or _is_black_hole(path):
             return
         if os.path.isfile(path):
+            targets.add(path)
+        elif os.path.isdir(os.path.dirname(path) or "."):
             targets.add(path)
 
     for m in _WRITE_PATTERNS[0].finditer(cmd):
