@@ -6,6 +6,12 @@ TTL_SECONDS = 180
 MAX_HELD = 16
 ASK_TIMEOUT = 120
 
+APPROVAL_MARKER = "TERMUX_APPROVAL:"
+
+GRANTED = "granted"
+DECLINED = "declined"
+UNAVAILABLE = "unavailable"
+
 NO_API = ("termux-api is not installed, so the device cannot be asked. "
           "Run: pkg install termux-api")
 
@@ -110,6 +116,12 @@ def spend(action: str) -> bool:
     return _held.pop(key(action), None) is not None
 
 
+def outcome(text: str, status: str, is_error: bool) -> dict:
+    payload = json.dumps({"status": status})
+    return {"text": f"{text}\n\n{APPROVAL_MARKER}{payload}",
+            "is_error": is_error}
+
+
 def run_approval_tool(name: str, params: dict) -> dict:
     if name != "approve":
         return {"text": f"Unknown approval tool: {name}", "is_error": True}
@@ -130,17 +142,18 @@ def run_approval_tool(name: str, params: dict) -> dict:
 
     approved, error = _ask(reason, method)
     if approved is None:
-        return {"text": f"The device could not ask: {error}. Put the question "
-                        "to the user in chat instead, and do not run the "
-                        "action yet.", "is_error": True}
+        return outcome(
+            f"The device could not ask: {error}. Put the question to the "
+            "user in chat instead, and do not run the action yet.",
+            UNAVAILABLE, True)
     if not approved:
-        return {"text": f"The user did not approve. Do not run: {action}",
-                "is_error": True}
+        return outcome(f"The user did not approve. Do not run: {action}",
+                       DECLINED, True)
 
     hold(action)
-    return {"text": f"Approved on the device. This exact action runs within "
-                    f"{TTL_SECONDS // 60} minutes: {action}",
-            "is_error": False}
+    return outcome(
+        f"Approved on the device. This exact action runs within "
+        f"{TTL_SECONDS // 60} minutes: {action}", GRANTED, False)
 
 
 APPROVAL_TOOLS = frozenset({"approve"})

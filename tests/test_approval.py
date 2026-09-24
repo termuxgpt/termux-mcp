@@ -22,6 +22,11 @@ def _fingerprint(result: str, errors=None):
                              "auth_result": result}))
 
 
+def _status(text: str) -> str:
+    body = text.split(approval.APPROVAL_MARKER, 1)[1]
+    return json.loads(body.strip().split("\n")[0])["status"]
+
+
 class TestKey:
 
     def test_whitespace_collapsed(self):
@@ -159,6 +164,45 @@ class TestArguments:
 
     def test_unknown_tool_name(self):
         assert run_approval_tool("approve_please", {})["is_error"] is True
+
+
+class TestOutcomeMarker:
+
+    def setup_method(self):
+        approval._held.clear()
+
+    def test_granted(self):
+        with mock.patch("subprocess.run",
+                        return_value=_fingerprint("AUTH_RESULT_SUCCESS")):
+            out = run_approval_tool("approve", {"action": "pkg upgrade"})
+        assert _status(out["text"]) == approval.GRANTED
+        assert out["is_error"] is False
+
+    def test_declined(self):
+        with mock.patch("subprocess.run",
+                        return_value=_fingerprint("AUTH_RESULT_FAILURE")):
+            out = run_approval_tool("approve", {"action": "pkg upgrade"})
+        assert _status(out["text"]) == approval.DECLINED
+        assert out["is_error"] is True
+
+    def test_unavailable(self):
+        with mock.patch("subprocess.run", side_effect=FileNotFoundError):
+            out = run_approval_tool("approve", {"action": "pkg upgrade"})
+        assert _status(out["text"]) == approval.UNAVAILABLE
+        assert out["is_error"] is True
+
+    def test_declined_and_unavailable_are_distinguishable(self):
+        with mock.patch("subprocess.run",
+                        return_value=_fingerprint("AUTH_RESULT_FAILURE")):
+            declined = run_approval_tool("approve", {"action": "pkg upgrade"})
+        with mock.patch("subprocess.run", side_effect=FileNotFoundError):
+            unavailable = run_approval_tool("approve", {"action": "pkg upgrade"})
+        assert declined["is_error"] == unavailable["is_error"] is True
+        assert _status(declined["text"]) != _status(unavailable["text"])
+
+    def test_a_programmer_error_carries_no_marker(self):
+        assert approval.APPROVAL_MARKER not in run_approval_tool("approve",
+                                                                 {})["text"]
 
 
 class TestHeldApprovals:
