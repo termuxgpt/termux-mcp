@@ -2,6 +2,7 @@ import json
 import os
 import re
 import subprocess
+from typing import Optional
 
 LIBRARY_DIR = os.path.dirname(os.path.abspath(__file__))
 TASK_DIR = os.path.join(LIBRARY_DIR, "playbooks")
@@ -457,7 +458,99 @@ def run_check(check: dict, timeout: int = PROBE_TIMEOUT) -> dict:
                 code=done.returncode)
 
 
-def run_doctor(only=None, timeout: int = PROBE_TIMEOUT) -> dict:
+MAX_REPAIRS = 6
+
+
+def requirement_ids(playbook: dict):
+    return [str(r.get("check")) for r in playbook.get("requires") or []
+            if isinstance(r, dict) and r.get("check")]
+
+
+def apply_fix(check: dict, confirmed: bool = False, task_id: str = "",
+              playbooks=None) -> dict:
+    from .shell import run_captured
+
+    name = check.get("id")
+    fix = check.get("fix")
+    if not isinstance(fix, dict) or not fix.get("playbook"):
+        return {"check": name, "applied": False, "fixed": False,
+                "reason": "no fix is declared for this check"}
+
+    if playbooks is None:
+        playbooks = load_playbooks()[0]
+
+    plan = resolve(fix["playbook"], fix.get("inputs") or {}, playbooks)
+    if not plan["ok"]:
+        return {"check": name, "applied": False, "fixed": False,
+                "reason": "; ".join(plan["errors"])}
+
+    runs = []
+    for step in plan["steps"]:
+        command = step.get("run")
+        if not command:
+            runs.append({"cmd": "", "ok": False,
+                         "reason": "tool steps arrive with execution"})
+            return {"check": name, "applied": False, "fixed": False,
+                    "reason": "this fix needs a step the engine cannot run "
+                              "yet", "runs": runs,
+                    "playbook": fix["playbook"]}
+        result = run_captured(command, confirmed=confirmed, task_id=task_id)
+        runs.append(dict(result, cmd=command))
+        if not result["ok"]:
+            return {"check": name, "applied": False, "fixed": False,
+                    "runs": runs,
+                    "reason": result["reason"] or "the step failed",
+                    "playbook": fix["playbook"]}
+
+    return {"check": name, "applied": True, "fixed": False, "runs": runs,
+            "reason": "", "playbook": fix["playbook"]}
+
+
+def repair(check_id: str, confirmed: bool = False, task_id: str = "",
+           seen: Optional[set] = None, depth: int = 0) -> dict:
+    checks, _ = load_checks()
+    playbooks = load_playbooks()[0]
+    seen = set(seen or set())
+    check = checks.get(check_id)
+
+    if check is None:
+        return {"check": check_id, "applied": False, "fixed": False,
+                "reason": f"no check named {check_id}"}
+    if check_id in seen or depth > MAX_REPAIRS:
+        return {"check": check_id, "applied": False, "fixed": False,
+                "reason": "the repairs would not finish, so this one was "
+                          "left alone"}
+
+    seen.add(check_id)
+    before = run_check(check)
+
+    if before["ok"]:
+        return {"check": check_id, "applied": False, "fixed": False,
+                "reason": "", "already_ok": True, "finding": before}
+
+    blockers = []
+    fix = check.get("fix")
+    target = playbooks.get((fix or {}).get("playbook")) if isinstance(fix, dict) else None
+    for needed in requirement_ids(target or {}):
+        outcome = repair(needed, confirmed=confirmed, task_id=task_id,
+                         seen=seen, depth=depth + 1)
+        if not outcome.get("fixed") and not outcome.get("already_ok"):
+            blockers.append(outcome)
+
+    if blockers:
+        return {"check": check_id, "applied": False, "fixed": False,
+                "reason": "a requirement could not be met first",
+                "blocked_by": blockers, "finding": before}
+
+    attempt = apply_fix(check, confirmed=confirmed, task_id=task_id,
+                        playbooks=playbooks)
+    after = run_check(check)
+    return dict(attempt, fixed=after["ok"], check=check_id,
+                finding=before, finding_after=after)
+
+
+def run_doctor(only=None, timeout: int = PROBE_TIMEOUT, fix: bool = False,
+               confirmed: bool = False, task_id: str = "") -> dict:
     checks, errors = load_checks()
     wanted = [name for name in (only or []) if str(name).strip()]
     unknown = [name for name in wanted if name not in checks]
@@ -468,12 +561,21 @@ def run_doctor(only=None, timeout: int = PROBE_TIMEOUT) -> dict:
     selected.sort(key=lambda c: (order.get(c.get("severity"), 9),
                                  str(c.get("id"))))
     findings = [run_check(check, timeout) for check in selected]
+
+    repairs = []
+    if fix:
+        for finding in [f for f in findings if not f["ok"]]:
+            repairs.append(repair(str(finding["id"] or ""), confirmed=confirmed,
+                                  task_id=task_id))
+        findings = [run_check(check, timeout) for check in selected]
+
     failing = [f for f in findings if not f["ok"]]
     return {
         "ok": not failing,
         "checked": len(findings),
         "failing": len(failing),
         "findings": findings,
+        "repairs": repairs,
         "unknown": unknown,
         "errors": errors,
     }

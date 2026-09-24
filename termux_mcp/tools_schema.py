@@ -932,6 +932,8 @@ OPENAI_TOOLS = [
                 "type": "object",
                 "properties": {
                     "check": {"type": "string", "description": "One check id, or several separated by commas"},
+                    "fix": {"type": "boolean", "description": "Apply each failing check's fix, then re-check"},
+                    "confirmed": {"type": "boolean", "description": "Agree to fixes that would otherwise ask"},
                     "format": {"type": "string", "enum": ["text", "json"], "description": "json gives structured findings"}
                 }
             }

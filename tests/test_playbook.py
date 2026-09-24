@@ -274,6 +274,167 @@ class TestResolver:
         assert "/tmp/b" in result["steps"][0]["run"]
 
 
+class TestRepair:
+
+    def _checks(self, **over):
+        check = _check(**over)
+        return {check["id"]: check}
+
+    def test_a_missing_fix_is_reported(self):
+        result = pb.apply_fix(_check())
+        assert result["applied"] is False
+        assert "no fix" in result["reason"]
+
+    def test_a_fix_that_cannot_be_resolved(self):
+        result = pb.apply_fix(_check(fix={"playbook": "ghost"}))
+        assert result["applied"] is False
+        assert "No playbook named ghost" in result["reason"]
+
+    def test_a_fix_runs_its_steps(self):
+        playbook = _playbook(steps=[{"run": "echo {thing}"}])
+        check = _check(fix={"playbook": "sample", "inputs": {"thing": "hi"}})
+        with mock.patch("termux_mcp.shell.run_captured",
+                        return_value={"ok": True, "text": "hi",
+                                      "reason": ""}) as run:
+            result = pb.apply_fix(check, playbooks={"sample": playbook})
+        assert result["applied"] is True
+        assert run.call_args[0][0] == "echo hi"
+
+    def test_a_failing_step_stops_the_rest(self):
+        playbook = _playbook(steps=[{"run": "one"}, {"run": "two"}])
+        check = _check(fix={"playbook": "sample", "inputs": {"thing": "x"}})
+        with mock.patch("termux_mcp.shell.run_captured",
+                        return_value={"ok": False, "reason": "failed",
+                                      "text": "boom"}) as run:
+            result = pb.apply_fix(check, playbooks={"sample": playbook})
+        assert result["applied"] is False
+        assert run.call_count == 1
+        assert result["runs"][0]["text"] == "boom"
+
+    def test_a_tool_step_is_not_run_yet(self):
+        playbook = _playbook(steps=[{"tool": "run", "with": {"cmd": "x"}}])
+        check = _check(fix={"playbook": "sample", "inputs": {"thing": "x"}})
+        with mock.patch("termux_mcp.shell.run_captured") as run:
+            result = pb.apply_fix(check, playbooks={"sample": playbook})
+        assert run.call_count == 0
+        assert "cannot run yet" in result["reason"]
+
+    def test_a_confirmation_that_is_refused_is_not_a_repair(self):
+        check = _check(fix={"playbook": "sample", "inputs": {"thing": "x"}})
+        playbook = _playbook(steps=[{"run": "echo {thing}"}])
+        with mock.patch("termux_mcp.shell.run_captured",
+                        return_value={"ok": False,
+                                      "reason": "confirmation_required",
+                                      "text": "needs confirming"}):
+            result = pb.apply_fix(check, playbooks={"sample": playbook})
+        assert result["fixed"] is False
+        assert result["reason"] == "confirmation_required"
+
+    def test_repair_reports_an_unknown_check(self):
+        result = pb.repair("ghost")
+        assert result["fixed"] is False
+        assert "no check named ghost" in result["reason"]
+
+    def test_a_passing_check_is_left_alone(self):
+        with mock.patch("termux_mcp.playbook.run_check",
+                        return_value={"ok": True, "id": "git_present"}):
+            with mock.patch("termux_mcp.playbook.apply_fix") as fix:
+                result = pb.repair("git_present")
+        assert result["already_ok"] is True
+        assert fix.call_count == 0
+
+    def _world(self, healed: bool):
+        state = {"git_present": False, "network_reachable": True}
+
+        def probe(check, timeout=pb.PROBE_TIMEOUT):
+            return {"ok": state.get(check["id"], False), "id": check["id"]}
+
+        def apply(check, confirmed=False, task_id="", playbooks=None):
+            if healed:
+                state["git_present"] = True
+            return {"check": check["id"], "applied": healed, "runs": []}
+
+        return state, probe, apply
+
+    def test_a_repair_that_works_is_marked_fixed(self):
+        state, probe, apply = self._world(healed=True)
+        with mock.patch("termux_mcp.playbook.run_check", side_effect=probe):
+            with mock.patch("termux_mcp.playbook.apply_fix", side_effect=apply):
+                result = pb.repair("git_present")
+        assert result["fixed"] is True
+
+    def test_a_repair_that_fails_is_not_marked_fixed(self):
+        state, probe, apply = self._world(healed=False)
+        with mock.patch("termux_mcp.playbook.run_check", side_effect=probe):
+            with mock.patch("termux_mcp.playbook.apply_fix", side_effect=apply):
+                result = pb.repair("git_present")
+        assert result["fixed"] is False
+        assert result["applied"] is False
+
+    def test_a_requirement_that_cannot_be_met_blocks_the_repair(self):
+        state, probe, apply = self._world(healed=True)
+        state["network_reachable"] = False
+        with mock.patch("termux_mcp.playbook.run_check", side_effect=probe):
+            with mock.patch("termux_mcp.playbook.apply_fix", side_effect=apply):
+                result = pb.repair("git_present")
+        assert result["fixed"] is False
+        assert "requirement could not be met" in result["reason"]
+        assert result["blocked_by"][0]["check"] == "network_reachable"
+
+    def test_a_check_that_leads_back_to_itself_stops(self):
+        playbooks = {"sample": _playbook(
+            requires=[{"check": "sample_present"}])}
+        checks = self._checks(fix={"playbook": "sample",
+                                   "inputs": {"thing": "x"}})
+        with mock.patch("termux_mcp.playbook.load_playbooks",
+                        return_value=(playbooks, [])):
+            with mock.patch("termux_mcp.playbook.load_checks",
+                            return_value=(checks, [])):
+                with mock.patch("termux_mcp.playbook.run_check",
+                                return_value={"ok": False,
+                                              "id": "sample_present"}):
+                    with mock.patch("termux_mcp.playbook.apply_fix") as fix:
+                        result = pb.repair("sample_present")
+        assert result["fixed"] is False
+        assert fix.call_count == 0
+        assert "could not be met" in result["reason"]
+
+    def test_the_shipped_clone_playbook_needs_git(self):
+        library = pb.load_library()
+        assert pb.requirement_ids(library["playbooks"]["clone_repo"]) == \
+            ["git_present"]
+        assert library["checks"]["git_present"]["fix"]["playbook"] == \
+            "install_package"
+
+
+class TestDoctorFix:
+
+    def test_fixing_reprobes_afterwards(self):
+        calls = []
+
+        def fake_check(check, timeout=pb.PROBE_TIMEOUT):
+            calls.append(check["id"])
+            return {"ok": False, "id": check["id"], "severity": "high",
+                    "title": "t", "explain": "", "probe": "p", "fix": None,
+                    "detail": "", "code": 1}
+
+        with mock.patch("termux_mcp.playbook.run_check", side_effect=fake_check):
+            with mock.patch("termux_mcp.playbook.repair",
+                            return_value={"check": "git_present",
+                                          "fixed": True}):
+                report = pb.run_doctor(only=["git_present"], fix=True)
+        assert calls == ["git_present", "git_present"]
+        assert report["repairs"][0]["fixed"] is True
+
+    def test_without_fix_nothing_is_repaired(self):
+        with mock.patch("termux_mcp.playbook.run_check",
+                        return_value={"ok": False, "id": "git_present"}):
+            with mock.patch("termux_mcp.playbook.repair") as repair:
+                report = pb.run_doctor(only=["git_present"])
+        assert repair.call_count == 0
+        assert report["repairs"] == []
+
+
 class _Done:
     def __init__(self, code=0, out="", err=""):
         self.returncode = code

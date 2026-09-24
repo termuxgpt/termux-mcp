@@ -316,6 +316,28 @@ def execute_streaming(handler: "BaseHTTPRequestHandler", raw_cmd: str,
     _run_process(handler, raw_cmd, stdin_data)
 
 
+def run_captured(cmd: str, confirmed: bool = False, task_id: str = "") -> dict:
+    from . import approval
+    from .mcp_bridge import VirtualHandler, decode_virtual
+    from .safety import snapshot_targets_from_command
+
+    raw = str(cmd or "").strip()
+    if not raw:
+        return {"ok": False, "reason": "empty", "text": "No command."}
+
+    risk = get_risk_assessment(raw)
+    if risk["requires_confirmation"] and not confirmed and not approval.spend(raw):
+        return {"ok": False, "reason": "confirmation_required",
+                "risk_level": risk["risk_level"], "text": risk["message"]}
+
+    snapshots = snapshot_targets_from_command(raw, task_id)
+    handler = VirtualHandler()
+    execute_streaming(handler, raw)
+    result = decode_virtual(handler)
+    return {"ok": not result.get("is_error"), "reason": "",
+            "text": result.get("text", ""), "snapshots": snapshots}
+
+
 def _run_process(handler: "BaseHTTPRequestHandler", raw_cmd: str,
                  stdin_data: Optional[str] = None) -> None:
     cmd = preprocess(raw_cmd)

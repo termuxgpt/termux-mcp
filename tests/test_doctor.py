@@ -66,6 +66,52 @@ class TestRender:
         assert "Fix:" not in text
 
 
+class TestRenderRepairs:
+
+    def _repair(self, **over):
+        base = {"check": "git_present", "fixed": True, "already_ok": False,
+                "reason": "", "runs": []}
+        base.update(over)
+        return base
+
+    def test_a_successful_repair_says_so(self):
+        report = _report([_finding(ok=True, detail="")])
+        report["repairs"] = [self._repair()]
+        text = render(report)
+        assert "FIXES" in text
+        assert "git_present: fixed" in text
+
+    def test_a_repair_that_ran_a_command_names_it(self):
+        attempt = self._repair(runs=[{"cmd": "pkg install git", "ok": True}])
+        report = _report([_finding()])
+        report["repairs"] = [attempt]
+        assert "ran: pkg install git" in render(report)
+
+    def test_a_failed_step_shows_why(self):
+        attempt = self._repair(runs=[{"cmd": "pkg install git", "ok": False,
+                                      "reason": "the step failed"}])
+        report = _report([_finding()])
+        report["repairs"] = [attempt]
+        assert "(the step failed)" in render(report)
+
+    def test_a_blocked_repair_names_the_blocker(self):
+        blocker = {"check": "network_reachable", "reason": "",
+                   "finding": {"title": "The network is reachable",
+                               "detail": "curl: not found"}}
+        report = _report([_finding()])
+        report["repairs"] = [self._repair(
+            fixed=False, reason="a requirement could not be met first",
+            blocked_by=[blocker])]
+        text = render(report)
+        assert "blocked by network_reachable: The network is reachable" in text
+        assert "curl: not found" in text
+
+    def test_a_check_that_was_already_fine_says_so(self):
+        report = _report([_finding(ok=True, detail="")])
+        report["repairs"] = [self._repair(fixed=False, already_ok=True)]
+        assert "already fine" in render(report)
+
+
 class TestHandler:
 
     def _call(self, tool, data):

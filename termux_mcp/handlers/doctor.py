@@ -42,6 +42,30 @@ def render(report: dict) -> str:
                 lines.append("         " + finding["explain"])
             lines.append(_fix_line(finding["fix"]))
 
+    repairs = report.get("repairs") or []
+    if repairs:
+        lines.append("")
+        lines.append("FIXES")
+        for attempt in repairs:
+            state = ("fixed" if attempt.get("fixed")
+                     else "already fine" if attempt.get("already_ok")
+                     else "still failing")
+            lines.append(f"  {attempt['check']}: {state}"
+                         + (f" — {attempt['reason']}"
+                            if not attempt.get("fixed")
+                            and attempt.get("reason") else ""))
+            for blocker in attempt.get("blocked_by") or []:
+                finding = blocker.get("finding") or {}
+                lines.append(f"         blocked by {blocker['check']}"
+                             f": {finding.get('title') or blocker.get('reason')}")
+                if finding.get("detail"):
+                    lines.append("           " + finding["detail"].replace(
+                        "\n", "\n           "))
+            for run in attempt.get("runs") or []:
+                lines.append(f"         ran: {run['cmd']}"
+                             + ("" if run.get("ok")
+                                else f"  ({run.get('reason') or 'failed'})"))
+
     if passing:
         lines.append("")
         lines.append("PASSING")
@@ -55,8 +79,16 @@ def render(report: dict) -> str:
     return "\n".join(line for line in lines if line is not None)
 
 
+def _flag(data: dict, key: str) -> bool:
+    value = data.get(key)
+    return value is True or str(value).strip().lower() in ("1", "true", "yes")
+
+
 def handle_doctor(handler, data: dict) -> None:
-    report = run_doctor(only=_wanted(data))
+    report = run_doctor(only=_wanted(data),
+                        fix=_flag(data, "fix"),
+                        confirmed=_flag(data, "confirmed"),
+                        task_id=str(data.get("task_id") or "")[:64])
 
     if str(data.get("format") or "").strip().lower() == "json":
         json_response(handler, 200, report)
