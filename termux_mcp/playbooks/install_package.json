@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "id": "install_package",
+  "title": "Install packages",
+  "category": "packages",
+  "risk": "write",
+  "phrases": ["install {package}", "install the package {package}", "pkg install {package}"],
+  "match": {
+    "package": {"type": "package", "required": true}
+  },
+  "requires": [{"check": "network_reachable"}],
+  "steps": [
+    {"run": "pkg install {package}"},
+    {"run": "command -v {package} || pkg list-installed | grep -q {package}",
+     "verify": "pkg list-installed | grep -q {package}"}
+  ],
+  "success": "Installed {package}."
+}

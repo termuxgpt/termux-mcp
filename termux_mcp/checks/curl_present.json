@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "curl_present",
+  "title": "curl is installed",
+  "severity": "medium",
+  "probe": "command -v curl",
+  "explain": "Downloads, installers and API calls use curl.",
+  "fix": {"playbook": "install_package", "inputs": {"package": "curl"}}
+}

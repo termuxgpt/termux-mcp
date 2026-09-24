@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "storage_linked",
+  "title": "Shared storage is linked",
+  "severity": "high",
+  "probe": "test -d ~/storage/shared",
+  "explain": "Without this, Termux cannot see Downloads, Documents or your photos.",
+  "fix": {"playbook": "termux_storage_setup"}
+}

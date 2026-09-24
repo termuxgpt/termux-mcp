@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "termux_api_present",
+  "title": "Termux:API is installed",
+  "severity": "high",
+  "probe": "command -v termux-battery-status",
+  "explain": "Battery, notifications, clipboard, SMS, camera and TTS all go through Termux:API. Install the Termux:API app as well as the package.",
+  "fix": {"playbook": "install_package", "inputs": {"package": "termux-api"}}
+}

@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "package_index_ok",
+  "title": "The package lists are present",
+  "severity": "medium",
+  "probe": "test -s $PREFIX/var/lib/apt/lists/*Packages 2>/dev/null || ls $PREFIX/var/lib/apt/lists/ | grep -q .",
+  "explain": "Without package lists, pkg install cannot resolve anything. Run pkg update."
+}

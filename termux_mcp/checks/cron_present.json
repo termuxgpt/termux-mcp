@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "id": "cron_present",
+  "title": "Scheduled jobs can run",
+  "severity": "low",
+  "probe": "command -v crontab && echo ok",
+  "expect": {"exit": 0, "stdout_matches": "ok"},
+  "explain": "Cron needs cronie and termux-services; without them, scheduled automations never fire.",
+  "fix": {"playbook": "install_package", "inputs": {"package": "cronie"}}
+}

@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "ssh_keys_present",
+  "title": "An SSH key exists",
+  "severity": "low",
+  "probe": "test -f ~/.ssh/id_ed25519.pub || test -f ~/.ssh/id_rsa.pub || test -f ~/.ssh/id_ecdsa.pub",
+  "explain": "GitHub, servers and ssh sessions want a key. Generate one with ssh-keygen -t ed25519."
+}

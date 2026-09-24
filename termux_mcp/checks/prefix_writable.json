@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "prefix_writable",
+  "title": "The Termux prefix is writable",
+  "severity": "high",
+  "probe": "test -w $PREFIX && test -w $PREFIX/bin",
+  "explain": "$PREFIX holds every installed package. If it is read-only, nothing can be installed or upgraded."
+}

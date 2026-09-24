@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "python_present",
+  "title": "Python is installed",
+  "severity": "medium",
+  "probe": "command -v python",
+  "explain": "The server itself runs on python, as do many tools you may want to install.",
+  "fix": {"playbook": "install_package", "inputs": {"package": "python"}}
+}

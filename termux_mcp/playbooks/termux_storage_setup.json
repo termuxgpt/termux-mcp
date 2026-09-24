@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "id": "termux_storage_setup",
+  "title": "Give Termux access to shared storage",
+  "category": "android",
+  "risk": "write",
+  "phrases": ["give termux storage access", "set up storage", "termux-setup-storage"],
+  "match": {},
+  "requires": [],
+  "steps": [
+    {"run": "termux-setup-storage"},
+    {"run": "ls ~/storage", "verify": "test -d ~/storage/shared"}
+  ],
+  "success": "Shared storage is linked at ~/storage — Android asks for permission the first time."
+}

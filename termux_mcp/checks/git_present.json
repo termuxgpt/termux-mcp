@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "git_present",
+  "title": "Git is installed",
+  "severity": "high",
+  "probe": "command -v git",
+  "explain": "Git is needed to clone repositories and keep track of changes.",
+  "fix": {"playbook": "install_package", "inputs": {"package": "git"}}
+}

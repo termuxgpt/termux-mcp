@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "dpkg_lock_free",
+  "title": "No package manager is stuck",
+  "severity": "medium",
+  "probe": "test ! -f $PREFIX/var/lib/dpkg/lock && test ! -f $PREFIX/var/lib/dpkg/lock-frontend",
+  "explain": "A stale lock means an earlier install was interrupted. Every later install will refuse to run."
+}

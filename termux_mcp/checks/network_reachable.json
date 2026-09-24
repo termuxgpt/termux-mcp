@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "network_reachable",
+  "title": "The network is reachable",
+  "severity": "high",
+  "probe": "curl -s -I -m 6 https://github.com >/dev/null && echo reachable",
+  "expect": {"exit": 0, "stdout_matches": "reachable"},
+  "explain": "Installs and clones need a working connection — check wifi or mobile data."
+}
