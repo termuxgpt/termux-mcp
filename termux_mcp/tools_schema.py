@@ -955,20 +955,35 @@ TOOL_CATEGORIES = {
     "terminal_send": "terminal", "terminal_read": "terminal",
     "terminal_list": "terminal", "terminal_close": "terminal",
     "history": "history", "history_save": "history", "history_clear": "history",
+    "theme_list": "appearance", "theme_preview": "appearance",
+    "theme_apply": "appearance", "theme_revert": "appearance",
+    "font": "appearance", "banner_render": "appearance",
+    "approve": "safety", "ask": "device",
 }
 
 
-def build_catalog() -> list:
+def build_catalog(extra_defs=()) -> list:
     """Compact per-tool catalog for LLM meta-tool routing.
 
     Each entry: {name, desc, params, category} where `params` is a short
     "key:type, key2:type" summary — small enough to embed in a system prompt
     or a use_tool meta-tool description without blowing the token budget.
+
+    `extra_defs` takes MCP-format tool definitions for the families that live
+    outside OPENAI_TOOLS (styling, terminal, approval). Passed in rather than
+    imported because mcp_core imports this module's caller.
     """
     catalog = []
-    for entry in OPENAI_TOOLS:
-        fn = entry.get("function", {})
+    seen = set()
+    entries = [entry.get("function", {}) for entry in OPENAI_TOOLS]
+    entries += [dict(d, parameters=d.get("inputSchema", {}))
+                for d in extra_defs]
+
+    for fn in entries:
         name = fn.get("name", "")
+        if not name or name in seen:
+            continue
+        seen.add(name)
         props = (fn.get("parameters") or {}).get("properties", {})
         param_summary = ", ".join(
             f"{k}:{_type_label(v)}" for k, v in props.items()

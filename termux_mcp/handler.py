@@ -200,7 +200,8 @@ class MCPHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/catalog":
-            json_response(self,200, {"catalog": build_catalog()})
+            from .mcp_core import NATIVE_TOOL_DEFS
+            json_response(self,200, {"catalog": build_catalog(NATIVE_TOOL_DEFS)})
             return
 
         if path == "/history":
