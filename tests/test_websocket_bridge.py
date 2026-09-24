@@ -3,9 +3,11 @@ import os
 import struct
 import sys
 import threading
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from termux_mcp import approval
 from termux_mcp import websocket as ws
 
 
@@ -42,6 +44,53 @@ def _call(tool, params=None):
     sock = FakeSocket()
     ws._ws_execute_tool(sock, tool, params or {}, _conn(), "req_1")
     return sock.last()
+
+
+class TestRiskGate:
+
+    def setup_method(self):
+        approval._held.clear()
+
+    def _run_cmd(self, params, req_id="req_1"):
+        sock = FakeSocket()
+        with mock.patch.object(ws, "_ws_run_process",
+                               return_value="done") as runner:
+            ws._ws_execute_tool(sock, "run", params, _conn(), req_id)
+        return sock.last(), runner
+
+    def test_a_blocked_command_never_reaches_the_shell(self):
+        reply, runner = self._run_cmd({"cmd": "rm -rf /"})
+        assert runner.call_count == 0
+        assert "Blocked" in reply["error"]
+
+    def test_a_warning_command_is_held_back(self):
+        reply, runner = self._run_cmd({"cmd": "rm -rf /tmp/x"})
+        assert runner.call_count == 0
+        assert json.loads(reply["output"])["status"] == "confirmation_required"
+
+    def test_confirmed_lets_a_warning_command_through(self):
+        _, runner = self._run_cmd({"cmd": "rm -rf /tmp/x",
+                                   "confirmed": True})
+        assert runner.call_count == 1
+
+    def test_a_device_approval_lets_it_through_once(self):
+        approval.hold("rm -rf /tmp/x")
+        _, runner = self._run_cmd({"cmd": "rm -rf /tmp/x"})
+        assert runner.call_count == 1
+        _, runner = self._run_cmd({"cmd": "rm -rf /tmp/x"})
+        assert runner.call_count == 0
+
+    def test_a_safe_command_is_not_touched(self):
+        _, runner = self._run_cmd({"cmd": "ls -la"})
+        assert runner.call_count == 1
+
+    def test_a_legacy_client_is_refused_in_plain_text(self):
+        sock = FakeSocket()
+        with mock.patch.object(ws, "_ws_run_process", return_value="done"):
+            ws._ws_execute_tool(sock, "run", {"cmd": "rm -rf /"}, _conn(), None)
+        text = _read_frame(sock.frames[-1]).decode()
+        assert "Blocked" in text
+        assert not text.lstrip().startswith("{")
 
 
 class TestBridgeFallback:

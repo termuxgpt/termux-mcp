@@ -14,7 +14,8 @@ from .config import AUTH_TOKEN, AUTO_INPUT_INTERVAL, COMMAND_TIMEOUT, HOME, MAX_
 from .safety import snapshot_before_write, trash_path
 from .styling import STYLE_TOOLS, run_style_tool
 from .terminal import TERMINAL_TOOLS, TerminalManager, run_terminal_tool
-from .approval import APPROVAL_TOOLS, run_approval_tool
+from .approval import APPROVAL_TOOLS, run_approval_tool, spend
+from .security import get_risk_assessment
 from .utils import (encode_base64, expand_home, is_install_command,
                     is_safe_path, kill_process_group, require_int, shell_quote,
                     split_cd_chain)
@@ -334,6 +335,35 @@ def _ws_send_json(sock, conn: dict, data: dict) -> None:
     _send_frame(sock, conn, json.dumps(data).encode())
 
 
+def _ws_risk_gate(sock, conn: dict, req_id, cmd: str, params: dict) -> bool:
+    risk = get_risk_assessment(cmd)
+
+    if not risk["blocked"] and not risk["requires_confirmation"]:
+        return False
+
+    if risk["blocked"]:
+        reply = {"error": risk["message"], "is_error": True}
+    elif params.get("confirmed") or spend(cmd):
+        return False
+    else:
+        reply = {"output": json.dumps({
+            "status": "confirmation_required",
+            "command": cmd,
+            "risk_level": risk["risk_level"],
+            "message": risk["message"],
+            "requires_confirmation": True,
+            "hint": "Re-send with confirmed: true, or approve this exact "
+                    "command on the device with the approve tool first.",
+        }), "is_error": False}
+
+    if req_id is None:
+        _send_frame(sock, conn,
+                    (reply.get("error") or reply["output"] + "\n").encode())
+    else:
+        _ws_reply(sock, conn, req_id, reply)
+    return True
+
+
 def _ws_bridge_tool(tool: str, params: dict):
     from . import mcp_bridge
 
@@ -359,7 +389,10 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
     p = params or {}
 
     if tool == "run":
-        out = _ws_run_process(sock, p.get("cmd", ""), conn)
+        cmd = p.get("cmd", "")
+        if _ws_risk_gate(sock, conn, req_id, cmd, p):
+            return
+        out = _ws_run_process(sock, cmd, conn)
         # Legacy clients (live terminal) send no _id and only stream text —
         # skip the JSON reply for them.
         if req_id is not None:
