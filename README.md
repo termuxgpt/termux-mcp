@@ -96,16 +96,16 @@ curl -X POST http://localhost:8080/run -H "Content-Type: application/json" -d '{
 | `TERMUX_MCP_PORT` | `8080` | HTTP listen port |
 | `TERMUX_MCP_HOST` | `127.0.0.1` | Bind address. Use `127.0.0.1` for local-only. |
 | `TERMUX_MCP_TIMEOUT` | `0` | Command timeout in seconds. `0` = **no timeout** (default) — long operations like `pkg upgrade` run until they finish. Set a positive value to re-enable the watchdog kill. |
-| `TERMUX_MCP_AUTH` | on | Authentication is **on by default**: a token is generated into `~/.termux-mcp/token` (mode 0600) on first start. `off` disables it (loopback only). |
+| `TERMUX_MCP_AUTH` | off | Authentication is **off by default** (loopback only). Set `on` to require a token: it is read from `TERMUX_MCP_AUTH_TOKEN`, or generated into `~/.termux-mcp/token` (mode 0600) on first start. |
 | `TERMUX_MCP_AUTH_TOKEN` | (generated) | Use this token instead of the generated one |
-| `TERMUX_MCP_CONFIG_DIR` | `~/.termux-mcp` | Token, pairing code, capability tokens, `policy.json`, event logs |
+| `TERMUX_MCP_CONFIG_DIR` | `~/.termux-mcp` | Token, capability tokens, `policy.json`, event logs |
 | `TERMUX_MCP_LOG_EVENTS` | `1` | `0` stops the JSONL event log (`logs/events.jsonl`) |
 | `TERMUX_MCP_MAX_OUTPUT` | `20000` | Max streamed output bytes per command. Output beyond this is drained (process keeps running) but not sent; a truncation marker is appended. Keeps LLM tool results small and token-efficient. |
 
-Pair the app once: run `termux-mcp pair` in Termux and type the 6-digit code into the app when it
-asks (the code lasts 5 minutes and 5 tries). `termux-mcp token` prints the token for other clients;
-`termux-mcp token --rotate` replaces it immediately (paired apps pair again). When binding to a
-non-loopback address, authentication cannot be switched off.
+The app needs no setup: termux-mcp listens on loopback and the app connects straight to it. If you
+want a token instead, set `TERMUX_MCP_AUTH=on` before starting the server — `termux-mcp token` prints
+it for clients that speak `Authorization: Bearer ...`, and `termux-mcp token --rotate` replaces it
+immediately. When binding to a non-loopback address, authentication cannot be switched off.
 
 ## Endpoints
 
@@ -386,11 +386,12 @@ For long-running commands, a watchdog thread enforces the timeout. Package insta
   `~/.profile`, `~/.termux/` (including `boot/`), and anything under
   `$PREFIX`. These are an SSH backdoor, code run on shell start, and code run
   at device boot respectively.
-- **Authentication.** On by default. Every endpoint requires a Bearer token
-  — POST, GET (except `/ping`, which the client's connectivity probe needs
-  before it holds a token, and `POST /pair`, which exchanges a one-time,
-  rate-limited pairing code for it), and the WebSocket, which accepts the
-  token via the `Authorization` header or a `?token=` query parameter.
+- **Authentication.** Off by default, and the server refuses to start unless it
+  is on when `HOST` is non-loopback. With `TERMUX_MCP_AUTH=on`, every endpoint
+  requires a Bearer token — POST, GET (except `/ping`, which the client's
+  connectivity probe needs before it holds a token), and the WebSocket, which
+  accepts the token via the `Authorization` header or a `?token=` query
+  parameter.
   Capability tokens (`cap_…`) are accepted everywhere with their scope
   enforced; they never get a raw PTY unless they name `terminal_open`.
 - **Network.** A request carrying an `Origin` header is rejected unless that

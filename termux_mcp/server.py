@@ -22,7 +22,7 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 
 
 def run() -> None:
-    if len(sys.argv) > 1 and sys.argv[1] in ("pair", "token", "help", "-h", "--help"):
+    if len(sys.argv) > 1 and sys.argv[1] in ("token", "help", "-h", "--help"):
         sys.exit(auth.cli(sys.argv[1:]))
 
     token = auth.master_token()
@@ -37,9 +37,9 @@ def run() -> None:
 
     if HOST != "127.0.0.1" and HOST != "localhost" and not token:
         logger.error(
-            "HOST is set to %s (non-loopback) but authentication is off "
-            "(TERMUX_MCP_AUTH=off). Refusing to start — network-exposed shell "
-            "execution requires authentication.",
+            "HOST is set to %s (non-loopback) but authentication is off. "
+            "Refusing to start — set TERMUX_MCP_AUTH=on for network-exposed "
+            "shell execution.",
             HOST,
         )
         sys.exit(1)
@@ -52,9 +52,9 @@ def run() -> None:
     logger.info("TermuxMCP running on http://%s:%d", HOST, PORT)
     logger.info("Working dir: %s", get_current_dir())
     if token:
-        logger.info("Authentication: enabled — pair the app with `termux-mcp pair`")
+        logger.info("Authentication: enabled")
     else:
-        logger.info("Authentication: OFF (TERMUX_MCP_AUTH=off)")
+        logger.info("Authentication: off — loopback only (TERMUX_MCP_AUTH=on to require a token)")
     logger.info("Press Ctrl+C to stop.\n")
 
     try:

@@ -1,9 +1,9 @@
 Package: termux-mcp
 Architecture: all
-Version: 0.13.0
+Version: 0.14.0
 Maintainer: Parixit Sutariya
-Installed-Size: 862
-Filename: ./termux-mcp_0.13.0_all.deb
-Size: 191504
+Installed-Size: 789
+Filename: ./termux-mcp_0.14.0_all.deb
+Size: 169664
 Description: Termux AI server: REST API daemon (termux-mcp) + native MCP server (termux-native-mcp) — let AI agents run shell commands on your Android device in real time
 Depends: python

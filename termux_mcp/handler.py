@@ -182,10 +182,6 @@ class MCPHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         self._log(f"POST {path}")
 
-        if path == "/pair":
-            self._handle_pair()
-            return
-
         if not self._authenticate():
             self._send_unauthorized()
             return
@@ -214,14 +210,6 @@ class MCPHandler(BaseHTTPRequestHandler):
                 call.result(payload.get("digest") if isinstance(payload.get("digest"), dict)
                             else payload)
                 call.ok = call.ok and not payload.get("is_error")
-
-    def _handle_pair(self) -> None:
-        from . import auth
-        data = self._read_json()
-        client = self.client_address[0] if self.client_address else "?"
-        result = auth.pair_claim(str(data.get("code", "")) if isinstance(data, dict) else "", client)
-        status = result.pop("status", 200)
-        json_response(self, status, result)
 
     def _route_post(self, path: str, data: dict) -> None:
         if path == "/run":

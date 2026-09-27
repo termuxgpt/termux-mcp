@@ -138,7 +138,7 @@ class TestPolicy:
 
 @pytest.fixture
 def auth_on(monkeypatch):
-    monkeypatch.delenv("TERMUX_MCP_AUTH", raising=False)
+    monkeypatch.setenv("TERMUX_MCP_AUTH", "on")
     monkeypatch.delenv("TERMUX_MCP_AUTH_TOKEN", raising=False)
     folder = tempfile.mkdtemp(prefix="caps-")
     monkeypatch.setenv("TERMUX_MCP_CONFIG_DIR", folder)

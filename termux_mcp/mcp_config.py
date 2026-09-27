@@ -6,7 +6,7 @@ DEFAULT_PROTOCOL_VERSION = "2025-06-18"
 
 
 SERVER_NAME = "termux-native-mcp"
-SERVER_VERSION = "0.13.0"
+SERVER_VERSION = "0.14.0"
 
 
 def native_port() -> int:

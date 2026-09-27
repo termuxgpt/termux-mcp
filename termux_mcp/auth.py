@@ -10,17 +10,11 @@ from typing import Optional
 from . import safety
 
 TOKEN_FILE = "token"
-PAIR_FILE = "pair.json"
 CAPS_FILE = "caps.json"
-PAIR_TTL = 300
-PAIR_TRIES = 5
-PAIR_RATE_WINDOW = 60
-PAIR_RATE_MAX = 10
 CAP_PREFIX = "cap_"
 
 _lock = threading.Lock()
 _token_cache = {"path": "", "mtime": None, "value": ""}
-_pair_hits = {}
 
 
 def config_dir() -> str:
@@ -38,7 +32,7 @@ def _path(name: str) -> str:
 
 
 def disabled() -> bool:
-    return os.environ.get("TERMUX_MCP_AUTH", "").strip().lower() in ("off", "0", "false", "no", "none")
+    return os.environ.get("TERMUX_MCP_AUTH", "").strip().lower() not in ("on", "1", "true", "yes", "enabled")
 
 
 def _write_private(path: str, text: str) -> None:
@@ -225,63 +219,7 @@ def bearer(header_value: str) -> str:
     return ""
 
 
-def pair_start(ttl: int = PAIR_TTL) -> dict:
-    code = f"{secrets.randbelow(1_000_000):06d}"
-    record = {"hash": _hash(code), "expires": time.time() + ttl, "tries": 0}
-    with _lock:
-        _write_private(_path(PAIR_FILE), json.dumps(record))
-    return {"code": code, "expires_in": ttl}
-
-
-def _rate_limited(client: str) -> bool:
-    now = time.time()
-    hits = [t for t in _pair_hits.get(client, []) if now - t < PAIR_RATE_WINDOW]
-    hits.append(now)
-    _pair_hits[client] = hits
-    return len(hits) > PAIR_RATE_MAX
-
-
-def pair_claim(code: str, client: str = "") -> dict:
-    if _rate_limited(client or "?"):
-        return {"ok": False, "status": 429, "error": "Too many attempts; wait a minute"}
-    code = "".join(ch for ch in str(code or "") if ch.isdigit())
-    path = _path(PAIR_FILE)
-    with _lock:
-        try:
-            with open(path, encoding="utf-8") as handle:
-                record = json.load(handle)
-        except (OSError, ValueError):
-            return {"ok": False, "status": 403, "error": "No pairing in progress: run `termux-mcp pair` in Termux"}
-        if record.get("expires", 0) < time.time():
-            _remove(path)
-            return {"ok": False, "status": 403, "error": "Pairing code expired: run `termux-mcp pair` again"}
-        if len(code) != 6 or not hmac.compare_digest(_hash(code), record.get("hash", "")):
-            record["tries"] = int(record.get("tries", 0)) + 1
-            if record["tries"] >= PAIR_TRIES:
-                _remove(path)
-                return {"ok": False, "status": 403, "error": "Too many wrong codes: run `termux-mcp pair` again"}
-            _write_private(path, json.dumps(record))
-            return {"ok": False, "status": 403, "error": "Wrong code",
-                    "tries_left": PAIR_TRIES - record["tries"]}
-        _remove(path)
-    token = master_token()
-    if not token:
-        return {"ok": True, "status": 200, "token": "", "auth": "off"}
-    return {"ok": True, "status": 200, "token": token}
-
-
-def _remove(path: str) -> None:
-    try:
-        os.remove(path)
-    except OSError:
-        pass
-
-
 def cli(argv) -> int:
-    import shutil
-    import subprocess
-    from .config import HOST, PORT
-
     cmd = argv[0] if argv else ""
     if cmd == "token":
         if "--rotate" in argv:
@@ -290,26 +228,15 @@ def cli(argv) -> int:
             except RuntimeError as error:
                 print(error)
                 return 1
-            print("New token (paired apps must pair again):")
+            print("New token (clients must be updated):")
             print(value)
             return 0
         value = master_token()
-        print(value if value else "Authentication is off (TERMUX_MCP_AUTH=off).")
+        print(value if value else "Authentication is off (set TERMUX_MCP_AUTH=on to enable).")
         return 0
     if cmd == "pair":
-        if not master_token():
-            print("Authentication is off (TERMUX_MCP_AUTH=off): nothing to pair.")
-            return 0
-        info = pair_start()
-        link = f"termuxgpt://pair?host={HOST}&port={PORT}&code={info['code']}"
-        print("\n  Pairing code:  " + " ".join(info["code"][:3]) + "  " + " ".join(info["code"][3:]))
-        print(f"  Valid for {info['expires_in'] // 60} minutes. Enter it in the app when it asks.\n")
-        if shutil.which("qrencode"):
-            try:
-                subprocess.run(["qrencode", "-t", "ANSIUTF8", link], timeout=10, check=False)
-            except (OSError, subprocess.SubprocessError):
-                pass
-        print("  " + link + "\n")
+        print("Pairing was removed. Authentication is off by default; set")
+        print("TERMUX_MCP_AUTH=on to require a token, then use `termux-mcp token`.")
         return 0
-    print("usage: termux-mcp [pair | token [--rotate]]")
+    print("usage: termux-mcp [token [--rotate]]")
     return 2

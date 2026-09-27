@@ -262,11 +262,10 @@ class TestTransportParity:
 
 @pytest.fixture
 def auth_on(monkeypatch):
-    monkeypatch.delenv("TERMUX_MCP_AUTH", raising=False)
+    monkeypatch.setenv("TERMUX_MCP_AUTH", "on")
     monkeypatch.delenv("TERMUX_MCP_AUTH_TOKEN", raising=False)
     folder = tempfile.mkdtemp(prefix="auth-")
     monkeypatch.setenv("TERMUX_MCP_CONFIG_DIR", folder)
-    auth._pair_hits.clear()
     yield folder
     shutil.rmtree(folder, ignore_errors=True)
 
@@ -302,33 +301,6 @@ class TestAuth:
         assert conn.getresponse().status == 200
         conn.close()
 
-    def test_pairing_hands_out_the_token_once(self, auth_on, rest):
-        port, _ = rest
-        code = auth.pair_start()["code"]
-        wrong = "000000" if code != "000000" else "111111"
-        status, body = rest_call(port, "/pair", {"code": wrong})
-        assert status == 403 and body["tries_left"] == auth.PAIR_TRIES - 1
-        status, body = rest_call(port, "/pair", {"code": code})
-        assert status == 200 and body["token"] == auth.master_token()
-        status, _ = rest_call(port, "/pair", {"code": code})
-        assert status == 403
-
-    def test_pairing_locks_after_too_many_wrong_codes(self, auth_on):
-        code = auth.pair_start()["code"]
-        wrong = "000000" if code != "000000" else "111111"
-        for _ in range(auth.PAIR_TRIES):
-            auth.pair_claim(wrong, "a")
-        assert auth.pair_claim(code, "a")["ok"] is False
-
-    def test_pairing_is_rate_limited(self, auth_on):
-        auth.pair_start()
-        results = [auth.pair_claim("999999", "flood")["status"] for _ in range(auth.PAIR_RATE_MAX + 2)]
-        assert results[-1] == 429
-
-    def test_pairing_code_expires(self, auth_on):
-        code = auth.pair_start(ttl=-1)["code"]
-        assert auth.pair_claim(code, "b")["ok"] is False
-
     def test_websocket_and_native_mcp_share_the_token(self, auth_on, monkeypatch):
         token = auth.master_token()
         assert websocket._ws_authenticated("", "/ws") is False
@@ -339,12 +311,9 @@ class TestAuth:
         assert mcp_config.native_auth_token() == token and mcp_config.require_auth()
         assert mcp_transport_http._auth_ok(token) and not mcp_transport_http._auth_ok("nope")
 
-    def test_cli_pair_and_token(self, auth_on, capsys):
+    def test_cli_token(self, auth_on, capsys):
         assert auth.cli(["token"]) == 0
         assert auth.master_token() in capsys.readouterr().out
-        assert auth.cli(["pair"]) == 0
-        out = capsys.readouterr().out
-        assert "Pairing code" in out and os.path.exists(os.path.join(auth_on, auth.PAIR_FILE))
 
 
 class TestMetrics:
