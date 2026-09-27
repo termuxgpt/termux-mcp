@@ -60,6 +60,12 @@ def is_dangerous_command(cmd: str) -> Tuple[bool, str, str]:
         if re.search(pattern, cmd_lower, re.IGNORECASE):
             return True, CommandRiskLevel.DANGEROUS, f"Blocked dangerous command: {cmd}"
 
+    unquoted = cmd_lower.replace("'", "").replace('"', "").replace("\\", "")
+    if unquoted != cmd_lower:
+        for pattern in DANGEROUS_PATTERNS:
+            if re.search(pattern, unquoted, re.IGNORECASE):
+                return True, CommandRiskLevel.DANGEROUS, f"Blocked dangerous command: {cmd}"
+
     for pattern in WARNING_PATTERNS:
         if re.search(pattern, cmd_lower, re.IGNORECASE):
             return False, CommandRiskLevel.WARNING, f"High-risk command detected (confirmation recommended): {cmd}"
