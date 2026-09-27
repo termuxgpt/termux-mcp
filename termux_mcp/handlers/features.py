@@ -13,14 +13,9 @@ if TYPE_CHECKING:
 
 HOME = os.environ.get("HOME", "/data/data/com.termux/files/home")
 
-# A cron schedule is five space-separated fields of digits and cron
-# operators. The crontab line is written with the schedule interpolated in,
-# so anything else (quotes, `;`, `$(...)`) is rejected rather than echoed
-# into the crontab.
 CRON_FIELD = r"[0-9*/,\-]+"
 CRON_SCHEDULE_RE = re.compile(rf"{CRON_FIELD}(?: {CRON_FIELD}){{4}}")
 
-# `gh pr list --state` / `gh pr merge --<method>` accept only these.
 PR_STATES = ("open", "closed", "merged", "all")
 PR_MERGE_METHODS = ("merge", "squash", "rebase")
 
@@ -50,9 +45,6 @@ def handle_process_list(handler: "BaseHTTPRequestHandler", data: dict) -> None:
 
 
 def handle_process_kill(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    # require_int replaces the old `.isdigit()` gate on pid and validates the
-    # signal too. minimum=1 keeps the gate's guarantee that a negative pid
-    # ("-1" kills every process the user can signal) never reaches kill(1).
     try:
         pid = require_int(data.get("pid", ""), minimum=1)
         signal_num = require_int(data.get("signal", 15))
@@ -156,15 +148,9 @@ def handle_patch(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         json_response(handler, 400, {"error": "patch content required"})
         return
 
-    # Do NOT strip this. A unified diff must end with a newline; stripping the
-    # trailing one makes patch report "unexpectedly ends in middle of line"
-    # and refuse the diff, so every patch failed with "malformed patch" no
-    # matter how valid it was.
     if not patch_content.endswith("\n"):
         patch_content += "\n"
 
-    # Patching is writing. Same gate as /write: a patch applied to
-    # ~/.ssh/authorized_keys or ~/.termux/boot/ is persistence, not editing.
     if is_sensitive_path(target) and not data.get("confirmed"):
         json_response(handler, 200, {
             "status": "confirmation_required",
@@ -182,18 +168,11 @@ def handle_patch(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     import base64
     safe_file = shell_quote(target)
     encoded = base64.b64encode(patch_content.encode()).decode()
-    # $TMPDIR, not /tmp: the Android /tmp exists but is mode 0771 owned by
-    # `shell`, so this process cannot write to it and every patch failed with
-    # "Permission denied" before the diff was even read.
     diff_file = shell_quote(os.path.join(tmp_dir(), "_mcp_patch.diff"))
 
-    # Safety: keep the pre-patch version before the file is modified.
     snap = snapshot_before_write(target, tool="patch")
     prefix = f"echo {shell_quote(f'[snapshot: {snap}]')}; " if snap else ""
 
-    # The diff arrives on stdin rather than in the command string: the whole
-    # command is a single argument to `sh -c`, capped at MAX_ARG_STRLEN
-    # (128 KB), and base64 inflates by 4/3.
     cmd = prefix + (
         f'base64 -d > {diff_file} && '
         f'patch {safe_file} {diff_file} 2>&1 && '
@@ -288,8 +267,6 @@ def handle_git_pr(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     action = data.get("action", "list").strip()
     repo = data.get("repo", "").strip()
     number = str(data.get("number", "")).strip()
-    # The PR number is interpolated unquoted in four branches below; empty
-    # stays empty so the per-branch "PR number required" checks still fire.
     try:
         safe_number = require_int(number) if number else ""
     except ValueError:
@@ -429,8 +406,6 @@ def handle_recipe_run(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     if not recipe:
         json_response(handler, 404, {"error": f"Recipe '{recipe_id}' not found"})
         return
-    # A recipe step *is* a command, so only the progress line is quoted —
-    # quoting the step itself would turn every recipe into a no-op echo.
     cmd = " && ".join([f'echo {shell_quote(f"> {s}")} && {s}' for s in recipe["steps"]])
     execute_streaming(handler, cmd)
 

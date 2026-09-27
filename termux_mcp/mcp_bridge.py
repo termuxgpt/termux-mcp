@@ -182,9 +182,6 @@ def decode_virtual(vh: VirtualHandler) -> dict:
 WS_ALIAS_DROPS = {"camera", "wifi", "sms", "tts", "ocr"}
 
 
-# Tools implemented directly in mcp_core.invoke_tool rather than routed to a
-# REST handler, which cannot express a long-lived session. Keep in sync with
-# NATIVE_TOOL_DEFS in mcp_core; tests/test_registry_drift.py enforces it.
 NATIVE_TOOL_NAMES = {"run", "cancel", "session_start", "session_run",
                      "session_poll", "session_list", "session_kill",
                      "terminal_open", "terminal_run", "terminal_send",
@@ -245,16 +242,6 @@ _MODULE_ROUTES = {
 
 
 def route_callable(tool_name: str):
-    """Return the callable for a bridged tool, as f(handler, params).
-
-    The instance routes return the *unbound* function, not a bound method.
-    ``invoke_tool`` calls every route as ``route(vh, p)``, passing a
-    VirtualHandler as the receiver — VirtualHandler implements wfile,
-    send_response, send_header and end_headers precisely so it can stand in
-    for the handler. Returning a method bound to a stand-in instance instead
-    gave a callable that took one argument, so every instance-routed tool
-    raised "takes 2 positional arguments but 3 were given" on every call.
-    """
     if tool_name in _INSTANCE_ROUTES:
         return getattr(MCPHandler, _INSTANCE_ROUTES[tool_name])
     if tool_name in _MODULE_ROUTES:

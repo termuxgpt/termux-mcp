@@ -1,15 +1,3 @@
-"""Cancellation must work across threads — that is the whole point.
-
-`/cancel` arrives on its own HTTP thread (ThreadingMixIn), so anything it needs
-to see has to be process-wide. Until 0.10.2 the running pid lived in
-`threading.local()`, which meant `/cancel` read `active_pid` from a thread that
-had never run a command, got `None`, and killed nothing: the endpoint could not
-work over HTTP at all, which is the only transport the REST API has.
-
-These tests run the command on one thread and cancel from another, so a
-regression to thread-local state fails here rather than on a user's phone.
-"""
-
 import os
 import signal
 import subprocess
@@ -24,7 +12,6 @@ from termux_mcp import shell
 
 @pytest.fixture(autouse=True)
 def _clean_registry():
-    """No pid may leak between tests."""
     with shell._active_pids_lock:
         shell._active_pids.clear()
     yield
@@ -33,14 +20,6 @@ def _clean_registry():
 
 
 def _spawn_sleeper():
-    # start_new_session matches how the daemon spawns every command
-    # (shell.py passes preexec_fn=os.setsid), which is the whole reason
-    # cancel_active can signal the process *group* by pid.
-    #
-    # Without it the child sits in the test runner's group, so its pid is not
-    # a group id, os.killpg raises ProcessLookupError and cancel_active
-    # correctly reports False. Windows hid that for as long as it did because
-    # os.killpg does not exist there and the os.kill fallback succeeds.
     return subprocess.Popen(
         [sys.executable, "-c", "import time; time.sleep(60)"],
         stdout=subprocess.DEVNULL,
@@ -50,7 +29,6 @@ def _spawn_sleeper():
 
 
 def test_registry_is_visible_from_another_thread():
-    """The regression that broke /cancel: thread-local state is invisible here."""
     seen = {}
     proc = _spawn_sleeper()
     try:
@@ -62,17 +40,12 @@ def test_registry_is_visible_from_another_thread():
         worker.start()
         time.sleep(0.5)
 
-        # The thread that would serve /cancel.
         seen["local"] = shell.get_active_pid()
         seen["registry"] = shell.active_pids()
     finally:
         proc.kill()
         proc.wait(timeout=5)
 
-    # get_active_pid() now reads the shared registry, so it reports the
-    # running command from any thread. It previously read a thread-local that
-    # only the running request's thread had written, which meant /env reported
-    # active_command_pid: null no matter what was executing.
     assert seen["local"] == proc.pid, (
         "get_active_pid() must report the running command from any thread"
     )
@@ -84,7 +57,6 @@ def test_cancel_stops_a_running_command():
     shell.register_active_pid(proc.pid)
     try:
         assert shell.cancel_active() is True
-        # SIGTERM then a bounded grace, then SIGKILL.
         for _ in range(40):
             if proc.poll() is not None:
                 break
@@ -109,7 +81,6 @@ def test_unregister_removes_the_pid():
         shell.unregister_active_pid(proc.pid)
         assert proc.pid not in shell.active_pids()
 
-        # And an already-finished command cannot be cancelled by a stale entry.
         assert shell.cancel_active() is False
     finally:
         proc.kill()
@@ -117,13 +88,9 @@ def test_unregister_removes_the_pid():
 
 
 def test_cancel_signals_the_group_where_the_platform_has_it():
-    """Each command runs under `setsid`, so its pid is its group id and killing
-    the group reaches the command's children. Skipped where killpg is absent
-    (Windows), because that is not the platform this ships on."""
     if not hasattr(os, "killpg"):
         pytest.skip("no process groups on this platform")
 
-    # A child that outlives its parent unless the *group* is signalled.
     proc = subprocess.Popen(
         ["sh", "-c", "sleep 60 & sleep 60"],
         stdout=subprocess.DEVNULL,
@@ -135,7 +102,6 @@ def test_cancel_signals_the_group_where_the_platform_has_it():
         assert shell.cancel_active() is True
         time.sleep(1.0)
         assert proc.poll() is not None
-        # Nothing left in that group.
         with pytest.raises(ProcessLookupError):
             os.killpg(proc.pid, signal.SIGTERM)
     finally:
@@ -146,11 +112,6 @@ def test_cancel_signals_the_group_where_the_platform_has_it():
 
 
 def test_cancel_refuses_a_pid_the_daemon_did_not_start():
-    """Cancelling must not become a way to kill arbitrary processes.
-
-    The registry only holds commands this daemon started. Naming any other
-    pid has to be refused, or /cancel is a general-purpose kill.
-    """
     victim = subprocess.Popen(
         ["sh", "-c", "sleep 60"],
         stdout=subprocess.DEVNULL,
@@ -167,7 +128,6 @@ def test_cancel_refuses_a_pid_the_daemon_did_not_start():
 
 
 def test_cancel_with_a_pid_stops_only_that_command():
-    """A scoped cancel must leave other running commands alone."""
     first = _spawn_sleeper()
     second = _spawn_sleeper()
     shell.register_active_pid(first.pid)
@@ -180,8 +140,6 @@ def test_cancel_with_a_pid_stops_only_that_command():
     finally:
         for p in (first, second):
             try:
-                # killpg is Unix-only; this suite also runs on Windows, where
-                # reaching for it raises AttributeError rather than OSError.
                 if hasattr(os, "killpg"):
                     os.killpg(p.pid, signal.SIGKILL)
                 else:

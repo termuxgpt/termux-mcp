@@ -26,9 +26,6 @@ if TYPE_CHECKING:
     from http.server import BaseHTTPRequestHandler
 
 
-# /git-smart falls through to `git <action>` for anything that is not one of the
-# named modes, so the action is not a free-form shell fragment. Only characters
-# that occur in real git subcommands and their arguments get through.
 GIT_SMART_ACTION_CHARS = set(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     " -_./:=@^~+*,%"
@@ -499,8 +496,6 @@ def handle_git_smart(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     elif action == "fix-conflict":
         cmd = f'cd {safe_dir} && echo "=== Conflict Status ===" && git diff --name-only --diff-filter=U 2>&1 && echo "---" && echo "Files with conflicts:" && git diff --check 2>&1 | head -20'
     else:
-        # Anything that is not a named mode is passed to git as its own
-        # arguments, so it must not be able to reach the shell.
         if not action or set(action) - GIT_SMART_ACTION_CHARS:
             json_response(handler, 400,
                           {"error": f"Unsupported git action: {action}"})
@@ -546,7 +541,6 @@ def handle_db_design(handler: "BaseHTTPRequestHandler", data: dict) -> None:
         return
 
     safe_db = shell_quote(db_path)
-    # Just create the database file and echo back the schema
     cmd = (
         f'touch {safe_db} 2>/dev/null && '
         f'echo {shell_quote("Database created: " + db_path)} && '

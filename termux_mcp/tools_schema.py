@@ -1014,8 +1014,6 @@ OPENAI_TOOLS = [
     },
 ]
 
-# ── Tool categories (used by the /catalog endpoint) ──────────────────────
-
 TOOL_CATEGORIES = {
     "run": "shell", "ls": "shell", "read": "shell", "write": "shell",
     "mkdir": "shell", "delete": "shell", "search": "shell", "cancel": "shell",
@@ -1051,18 +1049,14 @@ TOOL_CATEGORIES = {
     "approve": "safety", "ask": "device",
 }
 
+try:
+    from .smart import SMART_CATEGORIES as _SMART_CATEGORIES
+    TOOL_CATEGORIES.update(_SMART_CATEGORIES)
+except ImportError:  # pragma: no cover
+    pass
+
 
 def build_catalog(extra_defs=()) -> list:
-    """Compact per-tool catalog for LLM meta-tool routing.
-
-    Each entry: {name, desc, params, category} where `params` is a short
-    "key:type, key2:type" summary — small enough to embed in a system prompt
-    or a use_tool meta-tool description without blowing the token budget.
-
-    `extra_defs` takes MCP-format tool definitions for the families that live
-    outside OPENAI_TOOLS (styling, terminal, approval). Passed in rather than
-    imported because mcp_core imports this module's caller.
-    """
     catalog = []
     seen = set()
     entries = [entry.get("function", {}) for entry in OPENAI_TOOLS]

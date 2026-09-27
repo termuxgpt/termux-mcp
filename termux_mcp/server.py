@@ -3,7 +3,8 @@ import sys
 from http.server import HTTPServer
 from socketserver import ThreadingMixIn
 
-from .config import AUTH_TOKEN, HOST, PORT, REQUIRE_AUTH
+from . import auth
+from .config import HOST, PORT
 from .handler import MCPHandler
 from .network import kill_port
 from .shell import get_current_dir
@@ -21,20 +22,24 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 
 
 def run() -> None:
-    if REQUIRE_AUTH:
-        if len(AUTH_TOKEN) < 16:
+    if len(sys.argv) > 1 and sys.argv[1] in ("pair", "token", "help", "-h", "--help"):
+        sys.exit(auth.cli(sys.argv[1:]))
+
+    token = auth.master_token()
+    if token:
+        if len(token) < 16:
             logger.error(
                 "TERMUX_MCP_AUTH_TOKEN is set but too short (< 16 chars). "
                 "Refusing to start for safety."
             )
             sys.exit(1)
-        logger.info("Auth token configured (length=%d)", len(AUTH_TOKEN))
+        logger.info("Auth token configured (length=%d)", len(token))
 
-    if HOST != "127.0.0.1" and HOST != "localhost" and not REQUIRE_AUTH:
+    if HOST != "127.0.0.1" and HOST != "localhost" and not token:
         logger.error(
-            "HOST is set to %s (non-loopback) but TERMUX_MCP_AUTH_TOKEN "
-            "is not set. Refusing to start — network-exposed shell execution "
-            "requires authentication. Set TERMUX_MCP_AUTH_TOKEN or bind to 127.0.0.1.",
+            "HOST is set to %s (non-loopback) but authentication is off "
+            "(TERMUX_MCP_AUTH=off). Refusing to start — network-exposed shell "
+            "execution requires authentication.",
             HOST,
         )
         sys.exit(1)
@@ -46,8 +51,10 @@ def run() -> None:
 
     logger.info("TermuxMCP running on http://%s:%d", HOST, PORT)
     logger.info("Working dir: %s", get_current_dir())
-    if REQUIRE_AUTH:
-        logger.info("Authentication: enabled")
+    if token:
+        logger.info("Authentication: enabled — pair the app with `termux-mcp pair`")
+    else:
+        logger.info("Authentication: OFF (TERMUX_MCP_AUTH=off)")
     logger.info("Press Ctrl+C to stop.\n")
 
     try:

@@ -1,6 +1,7 @@
 import hmac
 import json
 import logging
+import os
 import queue
 import threading
 from http.server import BaseHTTPRequestHandler
@@ -8,6 +9,7 @@ from typing import Optional
 from urllib.parse import urlparse
 
 
+from . import auth, kernel
 from . import mcp_config as cfg
 from . import mcp_core as core
 
@@ -21,13 +23,18 @@ MAX_BODY = 5 * 1024 * 1024
 MAX_PROGRESS_EVENTS = 200
 
 
+def _auth(token: str):
+    native = os.environ.get("TERMUX_NATIVE_MCP_AUTH_TOKEN", "")
+    if native:
+        if token and hmac.compare_digest(token.encode(), native.encode()):
+            return True, None
+        if not token.startswith(auth.CAP_PREFIX):
+            return False, None
+    return auth.authenticate(token)
+
+
 def _auth_ok(token: str) -> bool:
-    expected = cfg.native_auth_token()
-    if not expected:
-        return True
-    if not token:
-        return False
-    return hmac.compare_digest(token.encode(), expected.encode())
+    return _auth(token)[0]
 
 
 def _bearer_from(headers) -> str:
@@ -38,20 +45,6 @@ def _bearer_from(headers) -> str:
 
 
 def _origin_allowed(host: str, origin_header: str) -> bool:
-    """Reject cross-origin browser requests.
-
-    An absent Origin is allowed: the Android app, curl, and stdio clients send
-    none, and a non-browser client cannot be driven by a web page.
-
-    A *present* Origin must be explicitly allowlisted.
-
-    It previously returned True whenever the allowlist was empty — which is
-    the default — as long as Host looked loopback. That is precisely the shape
-    of a DNS-rebinding request: a page on any site resolves its own hostname
-    to 127.0.0.1, so the browser sends Host: 127.0.0.1 alongside the
-    attacker's Origin, and the check passed. `host` is no longer consulted;
-    it is kept so the signature stays recognisable.
-    """
     if not origin_header:
         return True
     return origin_header in cfg.origin_allowlist()
@@ -106,7 +99,8 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
         if not _origin_allowed(host, self.headers.get("Origin", "")):
             self._send_json(403, {"error": "Origin not allowed"})
             return False
-        if not _auth_ok(_bearer_from(self.headers)):
+        allowed, self._principal = _auth(_bearer_from(self.headers))
+        if not allowed:
             self._send_body(401, b'{"error": "Unauthorized"}',
                             extra={"WWW-Authenticate": "Bearer"})
             return False
@@ -261,6 +255,10 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
             self._finish_chunks()
 
     def _run_dispatch(self, session, method, params, on_progress):
+        with kernel.acting_as(getattr(self, "_principal", None)):
+            return self._dispatch_inner(session, method, params, on_progress)
+
+    def _dispatch_inner(self, session, method, params, on_progress):
         result = core.dispatch(session, method, params,
                                on_progress=on_progress)
         if method == "initialize":

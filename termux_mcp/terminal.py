@@ -31,8 +31,6 @@ _DEFAULT_SHELLS = (
 )
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────
-
 
 _ANSI_RE = re.compile(
     r"""
@@ -119,8 +117,6 @@ def interactive_program(cmd: str):
     return None
 
 
-# ── Session ──────────────────────────────────────────────────────────────
-
 
 class TerminalSession:
 
@@ -143,8 +139,6 @@ class TerminalSession:
         self._sinks = {}
         self._exit_sinks = {}
         self._reader = None
-
-    # ── Output path ─────────────────────────────────────────────────────
 
     def attach(self, send_output, send_exit):
         token = uuid.uuid4().hex
@@ -192,8 +186,6 @@ class TerminalSession:
             except Exception:
                 pass
 
-    # ── Input path ──────────────────────────────────────────────────────
-
     def write(self, data: bytes) -> bool:
         if not data:
             return True
@@ -222,8 +214,6 @@ class TerminalSession:
             return True
         except OSError:
             return False
-
-    # ── Reader ──────────────────────────────────────────────────────────
 
     def start_reader(self) -> None:
         self._reader = threading.Thread(
@@ -320,8 +310,6 @@ class TerminalSession:
 
         TerminalManager.remove(self.id)
 
-    # ── Teardown ────────────────────────────────────────────────────────
-
     def close(self) -> None:
         with self._lock:
             if self.closed:
@@ -364,8 +352,6 @@ class TerminalSession:
             "created_at": self.created_at,
         }
 
-
-# ── Manager ──────────────────────────────────────────────────────────────
 
 
 class TerminalManager:
@@ -489,8 +475,6 @@ class TerminalManager:
             if session.last_activity < cutoff:
                 session.close()
 
-
-# ── Tools ────────────────────────────────────────────────────────────────
 
 TERMINAL_TOOLS = frozenset({
     "terminal_open", "terminal_run", "terminal_send",

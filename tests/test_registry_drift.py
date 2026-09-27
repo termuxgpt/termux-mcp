@@ -7,6 +7,7 @@ from termux_mcp import mcp_bridge as bridge, mcp_core as core
 from termux_mcp.approval import APPROVAL_TOOLS
 from termux_mcp.styling import STYLE_TOOLS
 from termux_mcp.terminal import TERMINAL_TOOLS
+from termux_mcp.smart import SMART_TOOLS
 from termux_mcp.tools_schema import OPENAI_TOOLS
 
 NATIVE = {d["name"] for d in core.NATIVE_TOOL_DEFS}
@@ -14,7 +15,7 @@ NATIVE = {d["name"] for d in core.NATIVE_TOOL_DEFS}
 
 def routable(name: str) -> bool:
     return (name in NATIVE or name in STYLE_TOOLS or name in TERMINAL_TOOLS
-            or name in APPROVAL_TOOLS
+            or name in APPROVAL_TOOLS or name in SMART_TOOLS
             or bridge.route_callable(name) is not None)
 
 
@@ -43,7 +44,7 @@ class TestRegistryDrift:
 
     def test_every_advertised_native_tool_is_implemented_somewhere(self):
         handled = (set(bridge.NATIVE_TOOL_NAMES) | STYLE_TOOLS
-                   | TERMINAL_TOOLS | APPROVAL_TOOLS)
+                   | TERMINAL_TOOLS | APPROVAL_TOOLS | SMART_TOOLS)
         unimplemented = sorted(NATIVE - handled)
         assert unimplemented == [], \
             f"offered to clients with nothing behind them: {unimplemented}"

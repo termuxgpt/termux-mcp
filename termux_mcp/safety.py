@@ -1,17 +1,3 @@
-"""File safety: snapshot before overwrite, trash instead of delete.
-
-Every file mutation through this server is recoverable. Originals land in
-~/termuxGPT/snapshots/ (mirrored from HOME; hashed basename outside HOME)
-and deletions move into ~/termuxGPT/trash/ — nothing is ever destroyed.
-
-`/write` and `/delete` snapshot their single target directly. `/run` shell
-commands get a best-effort scan for write patterns (redirects, tee, sed -i,
-cp/mv destinations, truncate, dd of=) so shell-based writes to real files
-are protected too. Commands whose writes can't be parsed (git checkout,
-tar/unzip extraction, python scripts writing files) remain the documented
-gap — the client-side confirmation dialog still gates those.
-"""
-
 import datetime
 import glob
 import hashlib
@@ -24,11 +10,10 @@ from . import changes
 from .config import HOME
 from .shell import get_current_dir
 
-SNAPSHOT_KEEP = 20  # newest snapshot dirs to retain
+SNAPSHOT_KEEP = 20
 SNAPSHOT_KEEP_HOURS = 24
 SNAPSHOT_KEEP_MAX = 200
 
-# /dev/null and friends — redirects to these are not file writes.
 _DEV_NULLISH = ("/dev/null", "/dev/stdin", "/dev/stdout", "/dev/stderr")
 
 
@@ -71,18 +56,13 @@ def prune_old_dirs(root: str, keep: int) -> None:
 
 def snapshot_before_write(path: str, tool: str = "", cmd: str = "",
                           task_id: str = "") -> Optional[str]:
-    """Copy `path` to ~/termuxGPT/snapshots/<ts>/<rel> before it is
-    overwritten. Returns the snapshot path, or None if there was nothing
-    to protect (new file, missing, or already inside termuxGPT/)."""
     root = safety_root("")
     if inside_safety_area(path):
-        return None  # never snapshot our own safety folders
+        return None
     if not os.path.exists(path):
         changes.record(root, changes.CREATE, path, tool=tool, cmd=cmd,
                        task_id=task_id)
         return None
-    # Microsecond ts: every write gets its own dir (second-resolution would
-    # collapse rapid writes into one dir and defeat per-write pruning).
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     if path.startswith(HOME):
         rel = os.path.relpath(path, HOME)
@@ -102,8 +82,6 @@ def snapshot_before_write(path: str, tool: str = "", cmd: str = "",
 
 def trash_path(path: str, tool: str = "", cmd: str = "",
                task_id: str = "") -> Optional[str]:
-    """Move `path` into ~/termuxGPT/trash/<ts>/ instead of deleting it.
-    Returns the trashed destination, or None on failure."""
     root = safety_root("")
     if not os.path.exists(path):
         return None
@@ -123,11 +101,7 @@ def trash_path(path: str, tool: str = "", cmd: str = "",
         return None
 
 
-# ── Shell command scan (/run) ──────────────────────────────────────────────
-
 def _expand_shell_path(token: str, cwd: Optional[str] = None) -> Optional[str]:
-    """Resolve a shell-ish path token (~, $HOME, relative) to an absolute
-    path. Returns None for tokens that aren't usable paths."""
     if not token:
         return None
     token = token.strip().strip('"\'')
@@ -142,19 +116,12 @@ def _expand_shell_path(token: str, cwd: Optional[str] = None) -> Optional[str]:
     return os.path.normpath(token)
 
 
-# Each pattern group(1) is the file token that may be overwritten.
 _WRITE_PATTERNS = [
-    # Redirections: >, >>, 1>, 2>, &>  (echo hi > file, cmd >> log, ...)
     re.compile(r"(?<!\S)(?:[12]?>>?|&>)\s*([^\s;&|]+)"),
-    # tee <file>
     re.compile(r"\btee\s+(?:-[a-zA-Z]+\s+)*([^\s;&|]+)"),
-    # cp / mv — destination is the last bare token before ; & |
     re.compile(r"\b(?:cp|mv)\s+(.*?)(?:[;&|]|$)"),
-    # sed -i / --in-place — file is the last bare token before ; & |
     re.compile(r"\bsed\s+(.*?)(?:[;&|]|$)"),
-    # truncate -s N <file>
     re.compile(r"\btruncate\s+-s\s+\S+\s+([^\s;&|]+)"),
-    # dd of=<file>
     re.compile(r"\bdd\s+(.*?)(?:[;&|]|$)"),
 ]
 
@@ -167,11 +134,12 @@ def _is_black_hole(path: str) -> bool:
     )
 
 
-def snapshot_targets_from_command(cmd: str, task_id: str = "") -> List[str]:
-    """Best-effort detection of files a shell command may overwrite.
-    Returns the snapshot paths actually taken (existing regular files)."""
+_REMOVE_PATTERN = re.compile(
+    r"\b(?:rm|rmdir|unlink|shred|mkdir|touch|chmod|chown|ln)\s+(.*?)(?:[;&|]|$)")
+
+
+def write_targets(cmd: str, include_removals: bool = False) -> List[str]:
     targets = set()
-    # Leading `cd dir && ...` changes the base for relative path tokens.
     cwd = get_current_dir()
     m = re.match(r"\s*cd\s+([^\s;&|]+)", cmd)
     if m:
@@ -179,7 +147,7 @@ def snapshot_targets_from_command(cmd: str, task_id: str = "") -> List[str]:
         if base and os.path.isdir(base):
             cwd = base
 
-    def add(token: str) -> None:
+    def add(token: str, must_exist_parent: bool = True) -> None:
         if not token or re.search(r"[&|;<>`]", token):
             return
         if "$" in token and not token.startswith("$HOME"):
@@ -187,7 +155,9 @@ def snapshot_targets_from_command(cmd: str, task_id: str = "") -> List[str]:
         path = _expand_shell_path(token, cwd)
         if not path or _is_black_hole(path):
             return
-        if os.path.isfile(path):
+        if not must_exist_parent:
+            targets.add(path)
+        elif os.path.isfile(path):
             targets.add(path)
         elif os.path.isdir(os.path.dirname(path) or "."):
             targets.add(path)
@@ -210,9 +180,17 @@ def snapshot_targets_from_command(cmd: str, task_id: str = "") -> List[str]:
         for tok in m.group(1).split():
             if tok.startswith("of="):
                 add(tok[3:])
+    if include_removals:
+        for m in _REMOVE_PATTERN.finditer(cmd):
+            for tok in m.group(1).split():
+                if not tok.startswith("-"):
+                    add(tok, must_exist_parent=False)
+    return sorted(targets)
 
+
+def snapshot_targets_from_command(cmd: str, task_id: str = "") -> List[str]:
     snaps = []
-    for path in sorted(targets):
+    for path in write_targets(cmd):
         snap = snapshot_before_write(path, tool="run", cmd=cmd,
                                          task_id=task_id)
         if snap:

@@ -1,15 +1,12 @@
 import os
 
 
-from .config import AUTH_TOKEN as REST_AUTH_TOKEN
-
-
 SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18",)
 DEFAULT_PROTOCOL_VERSION = "2025-06-18"
 
 
 SERVER_NAME = "termux-native-mcp"
-SERVER_VERSION = "0.10.0"
+SERVER_VERSION = "0.13.0"
 
 
 def native_port() -> int:
@@ -25,7 +22,8 @@ def native_path() -> str:
 
 
 def native_auth_token() -> str:
-    return os.environ.get("TERMUX_NATIVE_MCP_AUTH_TOKEN") or REST_AUTH_TOKEN
+    from . import auth
+    return os.environ.get("TERMUX_NATIVE_MCP_AUTH_TOKEN") or auth.master_token()
 
 
 def require_auth() -> bool:

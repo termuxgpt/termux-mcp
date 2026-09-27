@@ -6,7 +6,7 @@ import os
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
-from .config import AUTH_TOKEN, HOME, REQUIRE_AUTH
+from .config import HOME
 from .handlers.ai_power import (
     handle_smart_install, handle_permission_fix, handle_profile,
     handle_error_explain, handle_ssh_wizard, handle_service_guard,
@@ -40,6 +40,7 @@ from .tools_schema import OPENAI_TOOLS, build_catalog
 from .styling import STYLE_TOOLS, run_style_tool
 from .terminal import TERMINAL_TOOLS, run_terminal_tool
 from .approval import APPROVAL_TOOLS, run_approval_tool
+from .smart import SMART_TOOLS, run_smart_tool
 from . import approval
 from . import websocket as ws
 from .safety import snapshot_before_write, snapshot_targets_from_command, trash_path
@@ -54,16 +55,12 @@ from .shell import (
 
 logger = logging.getLogger(__name__)
 
-MAX_BODY_SIZE = 5 * 1024 * 1024  # 5 MB
+MAX_BODY_SIZE = 5 * 1024 * 1024
 
-# Values termux-notification accepts for --priority.
 NOTIFY_PRIORITIES = ("default", "high", "low", "min", "max")
 
-# The git subcommands /git-op runs; anything else is rejected rather than
-# reaching the shell in the generic `git <action>` branch.
 GIT_OP_ACTIONS = ("clone", "status", "log", "diff", "pull", "push", "branch")
 
-# An ffmpeg position: seconds (12, 1.5) or a timecode (00:00:12).
 FFMPEG_POSITION_CHARS = set("0123456789:.")
 
 
@@ -74,8 +71,6 @@ def _constant_time_compare(a: str, b: str) -> bool:
 class MCPHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    # Set once a status line has gone out, so an error arriving later does not
-    # try to send a second response on the same connection.
     _response_started = False
 
     def send_response(self, code, message=None) -> None:
@@ -83,18 +78,6 @@ class MCPHandler(BaseHTTPRequestHandler):
         super().send_response(code, message)
 
     def handle_one_request(self) -> None:
-        """Turn an unhandled handler error into a response, not a dropped socket.
-
-        require_number/require_int raise ValueError when a parameter is not a
-        number. Nothing caught that, so it escaped to BaseHTTPRequestHandler,
-        which logs it and closes the connection — a client sending one bad
-        parameter saw a network error rather than a reply, with nothing saying
-        which parameter was wrong. Since validation failures happen before any
-        output, there is still a clean moment to answer.
-
-        This also covers unexpected errors, which previously killed the
-        connection silently for exactly the same reason.
-        """
         try:
             super().handle_one_request()
         except ValueError as e:
@@ -112,14 +95,10 @@ class MCPHandler(BaseHTTPRequestHandler):
         logger.info(f"[MCP] {msg}")
 
     def _authenticate(self) -> bool:
-        """Check Bearer token if auth is required. Returns True if allowed."""
-        if not REQUIRE_AUTH:
-            return True
-        auth_header = self.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-            return _constant_time_compare(token, AUTH_TOKEN)
-        return False
+        from . import auth
+        ok, principal = auth.authenticate(auth.bearer(self.headers.get("Authorization", "")))
+        self.principal = principal
+        return ok
 
     def _send_unauthorized(self) -> None:
         body = json.dumps({"error": "Unauthorized"}).encode("utf-8")
@@ -136,10 +115,6 @@ class MCPHandler(BaseHTTPRequestHandler):
             if length > MAX_BODY_SIZE:
                 return {"_error": "Payload too large"}
             raw = self.rfile.read(length).decode("utf-8", errors="ignore")
-            # Log the size, never the body. This wrote the full request to a
-            # log file inside Termux — every /run command, /sms-send body,
-            # /clipboard-set text, /write content and history record, in
-            # plaintext, readable by anything that can read the home dir.
             self._log(f"Body: {len(raw)} bytes")
             if not raw:
                 return {}
@@ -148,28 +123,18 @@ class MCPHandler(BaseHTTPRequestHandler):
             self._log(f"JSON read error: {e}")
             return {}
 
-    # ── GET ─────────────────────────────────────────────────────────────────
-
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         self._log(f"GET {path}")
 
         if path == "/ping":
-            # Deliberately left open. The client's host-discovery probe calls
-            # this before it has a token, and it reports nothing but liveness.
             json_response(self,200, {
                 "status": "ok",
                 "cwd": get_current_dir(),
             })
             return
 
-        # WebSocket upgrades authenticate in the WS layer, which accepts either
-        # an Authorization header or a ?token= query. This must run before the
-        # HTTP gate below: _authenticate reads only the header, so gating first
-        # made the documented ?token= path unreachable.
         if path in ("/ws", "/ws/pty"):
-            # Serialize headers manually — Message.as_string() signature is
-            # incompatible across Python versions (crashes on 3.13).
             raw_headers = "\r\n".join(
                 f"{k}: {self.headers[k]}" for k in self.headers.keys()
             )
@@ -180,12 +145,13 @@ class MCPHandler(BaseHTTPRequestHandler):
                 ws.ws_handler(sock, raw_headers, self.path)
             return
 
-        # Auth gate for every other GET. do_POST has always had one; do_GET
-        # had none at all, so /env leaked HOME and the daemon pid, and
-        # /history returned the complete command transcripts and their output
-        # to anyone who could reach the port — no credentials required.
         if not self._authenticate():
             self._send_unauthorized()
+            return
+
+        if path == "/metrics":
+            from . import obs
+            json_response(self, 200, obs.metrics())
             return
 
         if path == "/env":
@@ -212,13 +178,14 @@ class MCPHandler(BaseHTTPRequestHandler):
 
         json_response(self,404, {"error": "Not found"})
 
-    # ── POST ────────────────────────────────────────────────────────────────
-
     def do_POST(self) -> None:
         path = urlparse(self.path).path
         self._log(f"POST {path}")
 
-        # Auth gate for all POST endpoints
+        if path == "/pair":
+            self._handle_pair()
+            return
+
         if not self._authenticate():
             self._send_unauthorized()
             return
@@ -228,6 +195,35 @@ class MCPHandler(BaseHTTPRequestHandler):
             json_response(self,413, {"error": data["_error"]})
             return
 
+        from . import kernel, obs
+        tool = path.lstrip("/") or "?"
+        self._kernel_tool = tool
+        refusal = kernel.authorize_tool(tool, data, getattr(self, "principal", None))
+        if refusal:
+            json_response(self, 403, {"error": refusal, "denied": True, "code": "E_CAPABILITY"
+                                      if getattr(self, "principal", None) is not None else "E_POLICY"})
+            return
+        with kernel.acting_as(getattr(self, "principal", None)), obs.timed("rest", tool) as call:
+            self._last_status = 200
+            self._last_payload = None
+            self._route_post(path, data)
+            status = getattr(self, "_last_status", 200)
+            call.ok = status < 400
+            payload = getattr(self, "_last_payload", None)
+            if isinstance(payload, dict):
+                call.result(payload.get("digest") if isinstance(payload.get("digest"), dict)
+                            else payload)
+                call.ok = call.ok and not payload.get("is_error")
+
+    def _handle_pair(self) -> None:
+        from . import auth
+        data = self._read_json()
+        client = self.client_address[0] if self.client_address else "?"
+        result = auth.pair_claim(str(data.get("code", "")) if isinstance(data, dict) else "", client)
+        status = result.pop("status", 200)
+        json_response(self, status, result)
+
+    def _route_post(self, path: str, data: dict) -> None:
         if path == "/run":
             self._handle_run(data)
             return
@@ -241,14 +237,6 @@ class MCPHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/cancel":
-            # Scoped by default. This used to signal every running pid, so any
-            # client could kill whatever any other client was running — a
-            # second caller's `pkg upgrade`, mid-install.
-            #
-            # HTTP carries no session identity, so a caller wanting to stop a
-            # specific command names it; `all: true` restores the old
-            # broadcast for callers that genuinely mean "stop everything".
-            # get_active_pid() is the common case: the one command running.
             if data.get("all") is True:
                 ok = cancel_active()
             else:
@@ -379,7 +367,6 @@ class MCPHandler(BaseHTTPRequestHandler):
         if path == "/scan-barcode":
             self._handle_scan_barcode(data)
             return
-        # ── Missing termux-api ──────────────────────────────
         if path == "/sensor":
             self._handle_sensor(data)
             return
@@ -404,7 +391,6 @@ class MCPHandler(BaseHTTPRequestHandler):
         if path == "/infrared":
             self._handle_infrared(data)
             return
-        # ── Linux Tool Endpoints ────────────────────────────
         if path == "/speedtest":
             self._handle_speedtest(data)
             return
@@ -435,7 +421,6 @@ class MCPHandler(BaseHTTPRequestHandler):
         if path == "/git-op":
             self._handle_git_op(data)
             return
-        # ── Termux Power-Tools ──────────────────────────────
         if path == "/diagnose":
             handle_diagnose(self, data)
             return
@@ -481,7 +466,6 @@ class MCPHandler(BaseHTTPRequestHandler):
         if path == "/restore":
             handle_restore(self, data)
             return
-        # ── AI-Native Power Features ─────────────────────────
         if path == "/smart-install":
             handle_smart_install(self, data)
             return
@@ -519,7 +503,6 @@ class MCPHandler(BaseHTTPRequestHandler):
             handle_tutorial(self, data)
             return
 
-        # ── Monopoly Features ──────────────────────────────────────────
         if path == "/system-info":
             handle_system_info(self, data)
             return
@@ -614,6 +597,8 @@ class MCPHandler(BaseHTTPRequestHandler):
             result = run_terminal_tool(tool, data)
         elif tool in APPROVAL_TOOLS:
             result = run_approval_tool(tool, data)
+        elif tool in SMART_TOOLS:
+            result = run_smart_tool(tool, data)
         else:
             json_response(self,404, {"error": "Not found"})
             return
@@ -622,9 +607,9 @@ class MCPHandler(BaseHTTPRequestHandler):
                    "is_error": bool(result.get("is_error"))}
         if "terminal" in result:
             payload["session"] = result["terminal"]
+        if isinstance(result.get("digest"), dict):
+            payload["digest"] = result["digest"]
         json_response(self, 200, payload)
-
-    # ── Handlers ────────────────────────────────────────────────────────────
 
     def _handle_run(self, data: dict) -> None:
         cmd = data.get("cmd", "").strip()
@@ -632,45 +617,21 @@ class MCPHandler(BaseHTTPRequestHandler):
             json_response(self,400, {"error": "Missing 'cmd'"})
             return
 
-        # Security check
-        risk = get_risk_assessment(cmd)
-        if risk["blocked"]:
-            json_response(self,403, {
-                "error": risk["message"],
-                "risk_level": risk["risk_level"],
-                "blocked": True,
-            })
+        from . import kernel
+        decision = kernel.gate(cmd, confirmed=bool(data.get("confirmed")),
+                               principal=getattr(self, "principal", None),
+                               cwd=get_current_dir())
+        if decision["status"] == "confirm":
+            json_response(self, 200, kernel.confirmation_payload(cmd, decision))
+            return
+        if not decision["allow"]:
+            json_response(self, decision["http"], kernel.refusal_payload(decision))
             return
 
-        if risk["requires_confirmation"]:
-            # Return the risk assessment — client must re-send with confirmed: true
-            if not data.get("confirmed") and not approval.spend(cmd):
-                json_response(self,200, {
-                    "status": "confirmation_required",
-                    "command": cmd,
-                    "risk_level": risk["risk_level"],
-                    "message": risk["message"],
-                    "requires_confirmation": True,
-                    "hint": "Re-send with confirmed: true, or approve this "
-                            "exact command on the device with the approve "
-                            "tool first.",
-                })
-                return
-
-        # File safety: shell commands can overwrite real files (redirects,
-        # sed -i, tee, cp/mv, truncate, dd of=...). Snapshot candidates
-        # before running; echo the snapshot paths so the AI can diff/restore.
-        snaps = snapshot_targets_from_command(cmd, data.get("task_id", ""))
-        if snaps and not cmd.strip().startswith("cd"):
-            hint = "; ".join(f"snapshot: {s}" for s in snaps)
-            cmd = f"echo {shell_quote(hint)}; {cmd}"
-        elif snaps:
+        cmd, snaps = kernel.prepare(cmd, data.get("task_id", ""))
+        if snaps and cmd.strip().startswith("cd"):
             logger.info("Snapshots taken (cd command, not echoed): %s", snaps)
 
-        # DEBUG, not INFO. This wrote every executed command to the log file in
-        # plaintext at the default level, and a command can carry a credential
-        # inline (`curl -H "Authorization: Bearer ..."`). Paired with the body
-        # fix above, nothing request-derived is written to the default log now.
         logger.debug("Executing: %s", cmd)
         execute_streaming(self, cmd)
 
@@ -679,7 +640,6 @@ class MCPHandler(BaseHTTPRequestHandler):
         if not is_safe_path(path):
             json_response(self,403, {"error": "Path not allowed"})
             return
-        # Always use -la to show dotfiles — Termux home is mostly dotfiles
         flags = "-la"
         if data.get("bare"):
             flags = "-1"
@@ -707,12 +667,6 @@ class MCPHandler(BaseHTTPRequestHandler):
             json_response(self,403, {"error": "Path not allowed"})
             return
 
-        # is_safe_path is a three-prefix denylist (/dev, /proc, /sys), not a
-        # sandbox — so ~/.ssh/authorized_keys, ~/.bashrc and
-        # ~/.termux/boot/start.sh were all writable with no gate whatsoever.
-        # Those three are an SSH backdoor, code execution on every shell
-        # start, and execution at device boot respectively. Not refused, but
-        # now requiring a deliberate second step.
         if is_sensitive_path(path) and not data.get("confirmed"):
             json_response(self, 200, {
                 "status": "confirmation_required",
@@ -727,16 +681,9 @@ class MCPHandler(BaseHTTPRequestHandler):
             })
             return
 
-        # Safety: keep the previous version before overwriting. The snapshot
-        # path is echoed to the client so the AI can diff/restore on request.
         snap = snapshot_before_write(path, tool="write",
                                      task_id=data.get("task_id", ""))
         snap_hint = f' snapshot: {shell_quote(snap)}' if snap else ''
-        # base64 to avoid shell escaping issues, but sent over stdin rather
-        # than in the command. As an argv element it hit MAX_ARG_STRLEN: the
-        # whole command is one argument to `sh -c`, capped at 128 KB, and
-        # base64 inflates by 4/3 — so /write failed above ~96 KB of content
-        # with "Argument list too long".
         encoded = base64.b64encode(content.encode()).decode()
         execute_streaming(
             self,
@@ -762,7 +709,6 @@ class MCPHandler(BaseHTTPRequestHandler):
         if not path:
             json_response(self,400, {"error": "Missing 'path'"})
             return
-        # Always require confirmation for delete
         if not data.get("confirmed"):
             json_response(self,200, {
                 "status": "confirmation_required",
@@ -775,7 +721,6 @@ class MCPHandler(BaseHTTPRequestHandler):
         if not is_safe_path(path):
             json_response(self,403, {"error": "Path not allowed"})
             return
-        # Safety: move to trash instead of destroying — recoverable.
         trashed = trash_path(path, tool="delete",
                              task_id=data.get("task_id", ""))
         if trashed:
@@ -790,8 +735,6 @@ class MCPHandler(BaseHTTPRequestHandler):
             json_response(self,403, {"error": "Path not allowed"})
             return
         execute_streaming(self, f'find {shell_quote(path)} -name {shell_quote(pattern)} -type f 2>/dev/null | head -n 30')
-
-    # ── Vision & Communication ────────────────────────────────────────────
 
     def _handle_screenshot(self, data: dict) -> None:
         output = data.get("output", "").strip()
@@ -866,8 +809,6 @@ class MCPHandler(BaseHTTPRequestHandler):
             return
         execute_streaming(self, f"termux-open-url {shell_quote(url)} 2>/dev/null && echo Opened: {shell_quote(url)} || echo Failed to open")
 
-    # ── Device Control & Info ──────────────────────────────────────────────
-
     def _handle_download(self, data: dict) -> None:
         url = data.get("url", "").strip()
         if not url:
@@ -917,8 +858,6 @@ class MCPHandler(BaseHTTPRequestHandler):
         duration = shell_quote_num(data.get("duration_ms", 500))
         execute_streaming(self, f"termux-vibrate -d {duration} 2>/dev/null && echo 'Vibrated {duration}ms' || echo 'Vibrate failed'")
 
-    # ── Automation & Media ─────────────────────────────────────────────────
-
     def _handle_tts_speak(self, data: dict) -> None:
         text = data.get("text", "").strip()
         if not text:
@@ -948,8 +887,6 @@ class MCPHandler(BaseHTTPRequestHandler):
         else:
             execute_streaming(self, f"termux-wallpaper {flags} 2>/dev/null && echo 'Wallpaper set' || echo 'Wallpaper failed'")
 
-    # ── Next-Level Viral Features ────────────────────────────────────────
-
     def _handle_toast(self, data: dict) -> None:
         text = data.get("text", "").strip()
         if not text:
@@ -971,8 +908,6 @@ class MCPHandler(BaseHTTPRequestHandler):
         )
 
     def _handle_brightness(self, data: dict) -> None:
-        # level is quoted, not validated: termux-brightness takes 0-255 but
-        # the value is interpolated twice, so it must not carry shell syntax.
         level = shell_quote(data.get("level", "") or "")
         if not level:
             execute_streaming(self, "termux-brightness 2>/dev/null || echo '{}'")
@@ -1027,8 +962,6 @@ class MCPHandler(BaseHTTPRequestHandler):
             f"zbarimg -q {shell_quote(output)} 2>/dev/null || echo 'Install zbar: pkg install zbar'"
         )
 
-    # ── Missing termux-api Handlers ──────────────────────────────────────
-
     def _handle_sensor(self, data: dict) -> None:
         sensor_name = data.get("sensor", "").strip()
         if sensor_name:
@@ -1079,8 +1012,6 @@ class MCPHandler(BaseHTTPRequestHandler):
         execute_streaming(self,
             f"termux-infrared-transmit -f {frequency} {shell_quote(pattern)} 2>/dev/null && "
             f"echo 'IR transmitted' || echo 'IR failed - install termux-infrared'")
-
-    # ── Linux Tool Handlers ──────────────────────────────────────────────
 
     def _handle_speedtest(self, data: dict) -> None:
         execute_streaming(self, "speedtest-cli --simple 2>/dev/null || echo 'Install: pkg install speedtest-cli'")
@@ -1137,8 +1068,6 @@ class MCPHandler(BaseHTTPRequestHandler):
         elif action == "extract-audio" and output_file:
             execute_streaming(self, f"ffmpeg -i {safe_in} -q:a 0 -map a {safe_out} 2>&1 | tail -3 || echo 'Failed'")
         elif action == "trim" and output_file:
-            # `start` defaults to a timecode, so it cannot go through
-            # require_number — accept only digits, colons and dots instead.
             start = str(data.get("start", "00:00:00")).strip()
             if not start or set(start) - FFMPEG_POSITION_CHARS:
                 json_response(self,400, {"error": "Invalid 'start' — use seconds (12) or a timecode (00:00:12)"})
@@ -1176,9 +1105,6 @@ class MCPHandler(BaseHTTPRequestHandler):
         if not text:
             json_response(self,400, {"error": "Missing 'text'"})
             return
-        # Build the URL in Python and quote it as one unit — inside the
-        # double quotes this used to be in, `$(...)` in any of the three
-        # would still have been expanded by the shell.
         url = ("https://translate.googleapis.com/translate_a/single"
                f"?client=gtx&sl={source}&tl={target}&dt=t&q={text}")
         execute_streaming(self,
@@ -1214,9 +1140,6 @@ class MCPHandler(BaseHTTPRequestHandler):
         directory = data.get("directory", "").strip()
         repo_dir = data.get("repo_dir", get_current_dir()).strip()
 
-        # Checked before anything runs: `action` reaches the shell in the
-        # generic `git {action}` branch below, so it has to be a known
-        # subcommand rather than whatever the caller sent.
         if action not in GIT_OP_ACTIONS:
             json_response(self,400, {"error": f"Unknown action: {action}"})
             return
@@ -1240,4 +1163,3 @@ class MCPHandler(BaseHTTPRequestHandler):
                 execute_streaming(self, f"cd {shell_quote(repo_dir)} && git branch -a 2>&1 || echo 'Git failed'")
             else:
                 execute_streaming(self, f"cd {shell_quote(repo_dir)} && git {action} 2>&1 | tail -20 || echo 'Git failed'")
-

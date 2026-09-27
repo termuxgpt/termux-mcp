@@ -1,21 +1,4 @@
 #!/usr/bin/env python3
-"""Build the Termux .deb and the apt metadata from the current source.
-
-Run from the repo root:
-
-    python scripts/build_deb.py
-
-Regenerates termux-mcp_<version>_all.deb, Packages, Packages.gz and Release
-from termux_mcp/ and pyproject.toml, so the package cannot drift from the
-source the way it did before (a hand-built 1.0 deb was still being served
-months after the project had moved on, missing most of its modules).
-
-The package is installed to a fixed location and a .pth file is dropped into
-whatever site-packages the device's python actually uses, in postinst. That
-keeps it working when the Termux python minor version changes, which a
-hardcoded python3.13 path does not.
-"""
-
 import gzip
 import io
 import pathlib
@@ -108,8 +91,6 @@ def make_data_tar():
     with tarfile.open(fileobj=buf, mode="w") as tar:
         add_bytes(tar, "./usr/bin/termux-mcp", LAUNCHER.encode(), 0o755)
         for path in source_files():
-            # as_posix(): pathlib str() uses backslashes on Windows, which
-            # would put literal "\" characters into every archive path.
             rel = path.relative_to(ROOT / "termux_mcp").as_posix()
             data = path.read_bytes()
             total += len(data)

@@ -1,19 +1,3 @@
-"""Regression tests for command injection.
-
-Parameters reaching these handlers come from HTTP, WebSocket and MCP callers.
-Each one is interpolated into a command string run with shell=True, so a
-parameter that is not quoted — or not validated as numeric — is arbitrary
-command execution.
-
-The check is quote parity rather than a substring search. A payload sitting
-inside single quotes is inert; the same bytes outside them are a second
-command. Substring-matching alone produces false positives, because a quoted
-`'label: ;touch /tmp/x;'` legitimately contains the payload text.
-
-No command is ever executed: the executor is stubbed in every module that
-binds it.
-"""
-
 import io
 import json
 import os
@@ -28,8 +12,6 @@ from termux_mcp import mcp_bridge as bridge
 from termux_mcp import shell as shell_mod
 from termux_mcp.handlers import ai_power, features, terminal
 
-# Chosen to break out of double quotes, single quotes and bare interpolation,
-# and to be recognisable in a captured command.
 PAYLOAD = ";touch /tmp/OWNED;"
 
 
@@ -42,11 +24,6 @@ def _executor_modules():
 
 
 def escapes_quoting(command: str, payload: str) -> bool:
-    """True if payload appears outside single quotes in command.
-
-    Counts quotes preceding the match: an even count means the payload is not
-    inside a quoted run, so the shell would act on it.
-    """
     start = 0
     while True:
         idx = command.find(payload, start)
@@ -58,9 +35,6 @@ def escapes_quoting(command: str, payload: str) -> bool:
 
 
 class InjectionTests(unittest.TestCase):
-    """Every parameter below was unquoted or unvalidated in the original code."""
-
-    # (tool, params) — the payload is placed in each parameter that was RAW.
     PROBES = [
         ("notify", {"title": "t", "content": "c", "id": PAYLOAD}),
         ("image_process", {"action": "resize", "input": "/a.png",
@@ -89,7 +63,6 @@ class InjectionTests(unittest.TestCase):
     ]
 
     def _run_probe(self, tool, params, captured):
-        """Invoke a route, capturing commands. Returns True if it raised ValueError."""
         route = bridge.route_callable(tool)
         if route is None:
             self.skipTest(f"no route for {tool}")
@@ -97,11 +70,8 @@ class InjectionTests(unittest.TestCase):
         try:
             route(bridge.VirtualHandler(), params)
         except ValueError:
-            # Rejected outright by require_int/require_number — the strongest
-            # possible outcome for a numeric parameter.
             return True
         except Exception:
-            # A tool's own validation may reject the params for other reasons.
             pass
         return len(captured) == before
 
@@ -149,20 +119,11 @@ class InjectionTests(unittest.TestCase):
         self.assertEqual(require_number(5), "5")
         self.assertEqual(require_number("1.5"), "1.5")
         self.assertEqual(require_int("42"), "42")
-        # Bounds are enforced, not silently clamped.
         with self.assertRaises(ValueError):
             require_number(500, maximum=100)
 
 
 class HandlerValidationTests(unittest.TestCase):
-    """Handlers that previously crashed on their validation error paths.
-
-    `_json_response` was called in 15 places across handlers/terminal.py and
-    handlers/ai_power.py but was never imported or defined, so every one of
-    those paths raised NameError instead of returning a 400. Nothing covered
-    them, so it went unnoticed.
-    """
-
     def test_no_undefined_json_response(self):
         for mod in (terminal, ai_power, features):
             path = mod.__file__
@@ -176,14 +137,6 @@ class HandlerValidationTests(unittest.TestCase):
 
 
 class RiskGateCoverageTests(unittest.TestCase):
-    """The risk gate must apply to every endpoint, not only /run.
-
-    get_risk_assessment was called from exactly two places — the /run handler
-    and the MCP run tool — so roughly 120 endpoints bypassed it, including
-    /write, /delete, /patch, /cron-add, /service-guard and /ssh-wizard.
-    Funnelling the check through execute_streaming is what closes that.
-    """
-
     @staticmethod
     def _handler():
         class _W:
@@ -233,9 +186,6 @@ class RiskGateCoverageTests(unittest.TestCase):
         self.assertEqual(executed, ["echo hi"])
 
     def test_previously_dead_patterns_now_fire(self):
-        # These patterns are written with uppercase flags, but the command is
-        # lowercased before matching — so case-sensitive matching meant they
-        # could never fire and `chmod -R 777 /` reported SAFE.
         from termux_mcp.security import get_risk_assessment
 
         for cmd in ("chmod -R 777 /", "chmod -R 000 /x", "chown -R root /x"):
@@ -244,23 +194,12 @@ class RiskGateCoverageTests(unittest.TestCase):
     def test_origin_check_rejects_rebinding(self):
         from termux_mcp.mcp_transport_http import _origin_allowed
 
-        # No Origin: the app, curl and stdio clients send none.
         self.assertTrue(_origin_allowed("127.0.0.1", ""))
-        # A page resolving its own host to loopback sends Host: 127.0.0.1
-        # with the attacker's Origin. This used to be allowed.
         self.assertFalse(_origin_allowed("127.0.0.1", "https://evil.com"))
         self.assertFalse(_origin_allowed("evil.com", "https://evil.com"))
 
 
 class SensitivePathTests(unittest.TestCase):
-    """Writes that grant persistence must require confirmation.
-
-    is_safe_path is a three-prefix denylist (/dev, /proc, /sys), not a
-    sandbox, so ~/.ssh/authorized_keys, ~/.bashrc and ~/.termux/boot/start.sh
-    were all writable with no gate at all — an SSH backdoor, code execution
-    on every shell start, and execution at device boot.
-    """
-
     def setUp(self):
         from termux_mcp.utils import is_sensitive_path
         self.sp = is_sensitive_path
@@ -277,8 +216,6 @@ class SensitivePathTests(unittest.TestCase):
             self.assertFalse(self.sp(os.path.join(self.home, rel)), rel)
 
     def test_traversal_out_of_a_sensitive_dir_is_not_sensitive(self):
-        # Resolves to ~/notes.txt, so it is an ordinary file — the check
-        # works on the realpath, not the literal string.
         self.assertFalse(self.sp(os.path.join(self.home, ".ssh/../notes.txt")))
 
     def test_empty_and_unresolvable_fail_closed(self):
@@ -286,18 +223,7 @@ class SensitivePathTests(unittest.TestCase):
         self.assertFalse(self.sp(None))  # type: ignore[arg-type]
 
     def test_prefix_is_covered_selectively_not_wholesale(self):
-        """$PREFIX holds executables and config — but $TMPDIR lives under it.
-
-        Treating all of $PREFIX as sensitive meant writing an ordinary
-        temporary file required confirmation. Found by running against a real
-        device, where $TMPDIR really is $PREFIX/tmp; a Windows dev machine has
-        no such layout, so no local test would have caught it.
-        """
         prefix = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
-        # The $PREFIX branch only means anything where Termux's layout exists.
-        # On Windows, realpath("/data/...") becomes "P:\\data\\..." and can
-        # never match, so this would fail for the wrong reason — the device run
-        # is the authoritative check for it.
         if os.path.realpath(prefix) != prefix.replace("\\", "/"):
             self.skipTest("$PREFIX does not resolve here (not Termux)")
 
@@ -308,14 +234,6 @@ class SensitivePathTests(unittest.TestCase):
 
 
 class ValidationErrorResponseTests(unittest.TestCase):
-    """A bad parameter must produce a 400, not a dropped connection.
-
-    require_number/require_int raise ValueError. Nothing caught it, so the
-    exception escaped to BaseHTTPRequestHandler, which logs and closes the
-    socket — the client saw a network error with no indication of which
-    parameter was wrong.
-    """
-
     @classmethod
     def setUpClass(cls):
         import threading
@@ -353,20 +271,11 @@ class ValidationErrorResponseTests(unittest.TestCase):
         self.assertIn("Expected a number", body)
 
     def test_the_payload_is_not_echoed_into_a_command(self):
-        # The error names the value, which is fine, but it must never have
-        # reached the shell.
         status, _ = self._post("/process-kill", {"pid": PAYLOAD})
         self.assertEqual(status, 400)
 
 
 class TempDirTests(unittest.TestCase):
-    """Handlers hardcoded /tmp, which this process cannot write to on Termux.
-
-    Android's /tmp exists — owned by `shell`, mode 0771 — so the Termux user
-    can traverse it but not create files in it. /patch could never apply a
-    diff, and every step of migrate failed behind its own "2>/dev/null".
-    """
-
     def test_tmp_dir_is_actually_writable(self):
         from termux_mcp.utils import tmp_dir
 
@@ -383,8 +292,6 @@ class TempDirTests(unittest.TestCase):
     def test_no_module_hardcodes_a_bare_tmp(self):
         import re as _re
 
-        # The full $PREFIX/tmp path is fine — it is writable. A bare /tmp is
-        # not. The lookbehind exempts the former.
         bare = _re.compile(r"(?<![\w/])/tmp/")
         for mod in (handler_mod, features, ai_power):
             path = mod.__file__
@@ -397,18 +304,6 @@ class TempDirTests(unittest.TestCase):
 
 
 class RiskPatternPrecisionTests(unittest.TestCase):
-    """Block the dangerous targets, not every command that mentions rm -rf.
-
-    Two rounds of over-broadness were found by running real workflows:
-
-      - `&& rm -rf` blocked the migrate handler's own cleanup step
-        (`... && rm -rf $TMPDIR/migrate_*`), so migration could never run.
-      - `rm -rf ~` matched `rm -rf ~/junk`, treating a targeted subdirectory
-        delete as catastrophic.
-
-    Both are now matched on target rather than mere presence.
-    """
-
     DANGEROUS = [
         "rm -rf /",
         "echo x && rm -rf /",
@@ -425,7 +320,6 @@ class RiskPatternPrecisionTests(unittest.TestCase):
     ]
 
     NOT_DANGEROUS = [
-        # The migrate handler's cleanup — must not block a real workflow.
         "echo hi && rm -rf /data/data/com.termux/files/usr/tmp/migrate_* 2>/dev/null",
         "rm -rf ~/junk",
         "rm -rf ./build",

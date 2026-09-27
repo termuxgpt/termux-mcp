@@ -189,19 +189,10 @@ def _figlet(text: str, font: str):
 
 _FIGLET_FONT_LINE = re.compile(r"^(\S+)\s+.*:$", re.MULTILINE)
 
-# Classic figlet fonts, used when a preview is asked for without names. They
-# ship with figlet itself, and they look different enough from each other to be
-# worth choosing between.
 _DEFAULT_SAMPLE_FONTS = ("standard", "big", "slant", "shadow")
 
 
 def _parse_figlet_fonts(output: str):
-    """Font names out of `showfigfonts`' listing.
-
-    Each entry is the name, its sample, then a colon — so the name is the first
-    token of a line that ends in one. Split out from the call because this is
-    the part worth testing, and it needs neither figlet nor a device.
-    """
     names = _FIGLET_FONT_LINE.findall(output or "")
     return sorted(set(names)) if names else None
 
@@ -257,13 +248,6 @@ def _toilet(text: str, font: str = "", filter_: str = ""):
 
 
 def _render_font(text: str, font: str, filter_: str = ""):
-    """Render with whichever tool owns that font name.
-
-    figlet and toilet keep separate font files in separate directories, so the
-    name decides the renderer: a name in toilet's set that figlet does not have
-    is a toilet font. A name in neither set still goes to figlet, because its
-    error names the problem better than a guess would.
-    """
     if font and font not in (_figlet_fonts() or []) and font in _toilet_fonts():
         return _toilet(text, font, filter_)
     return _figlet(text, font)
@@ -430,8 +414,6 @@ def run_style_tool(name: str, params: dict) -> dict:
             return {"text": "\n".join(lines), "is_error": False}
 
         if action == "preview":
-            # Short by default: figlet fonts are wide, and a preview stacks
-            # several of them.
             text = str(p.get("text") or p.get("sample") or "Termux").strip()
             if len(text) > 40:
                 return {"text": "Keep the sample under 40 characters — these "

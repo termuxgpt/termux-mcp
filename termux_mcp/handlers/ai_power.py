@@ -9,10 +9,6 @@ if TYPE_CHECKING:
 
 HOME = os.environ.get("HOME", "/data/data/com.termux/files/home")
 
-# An alias name is written into ~/.bashrc and used as a `sed`/`unalias`
-# argument, so it is held to what bash actually accepts in an alias name
-# rather than being quoted into place: a name carrying `;`, a quote or a
-# space would otherwise be persisted into the shell's startup file.
 ALIAS_NAME_CHARS = set(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-"
 )
@@ -21,7 +17,7 @@ ALIAS_NAME_CHARS = set(
 
 def handle_smart_install(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     packages = data.get("packages", "").strip()
-    manager = data.get("manager", "auto").strip()  # auto, pkg, pip, npm, gem, cargo
+    manager = data.get("manager", "auto").strip()
     dry_run = data.get("dry_run", False)
 
     if not packages:
@@ -36,8 +32,6 @@ def handle_smart_install(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     ]
 
     pkg_list = packages.split()
-    # Each package is quoted on its own: quoting the joined list would hand
-    # pip/pkg a single "a b" argument instead of two packages.
     pkgs_safe = " ".join(shell_quote(p) for p in pkg_list)
     for pkg in pkg_list:
         pkg_safe = shell_quote(pkg)
@@ -552,15 +546,10 @@ def handle_migrate(handler: "BaseHTTPRequestHandler", data: dict) -> None:
     if action == "backup":
         import time as _time
         ts = _time.strftime("%Y%m%d_%H%M%S")
-        # Both were assigned only inside the branch, so passing an explicit
-        # `output` raised NameError on the next line.
         output = (data.get("output") or "").strip() or (
             f"~/storage/shared/termux_migration_{ts}.tar.gz"
         )
         safe_out = shell_quote(output)
-        # $TMPDIR, not /tmp. Android's /tmp exists but is mode 0771 owned by
-        # `shell`, so this process cannot write to it and every step of the
-        # backup failed silently behind its "2>/dev/null".
         tmp = shell_quote(tmp_dir())
 
         checks = [

@@ -25,7 +25,6 @@ def _load() -> list:
 
 
 def _save(entries: list) -> None:
-    # Trim to max entries
     if len(entries) > MAX_ENTRIES:
         entries = entries[-MAX_ENTRIES:]
     with open(HISTORY_FILE, "w") as f:

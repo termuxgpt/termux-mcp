@@ -96,10 +96,16 @@ curl -X POST http://localhost:8080/run -H "Content-Type: application/json" -d '{
 | `TERMUX_MCP_PORT` | `8080` | HTTP listen port |
 | `TERMUX_MCP_HOST` | `127.0.0.1` | Bind address. Use `127.0.0.1` for local-only. |
 | `TERMUX_MCP_TIMEOUT` | `0` | Command timeout in seconds. `0` = **no timeout** (default) — long operations like `pkg upgrade` run until they finish. Set a positive value to re-enable the watchdog kill. |
-| `TERMUX_MCP_AUTH_TOKEN` | (none) | Bearer token for authentication |
+| `TERMUX_MCP_AUTH` | on | Authentication is **on by default**: a token is generated into `~/.termux-mcp/token` (mode 0600) on first start. `off` disables it (loopback only). |
+| `TERMUX_MCP_AUTH_TOKEN` | (generated) | Use this token instead of the generated one |
+| `TERMUX_MCP_CONFIG_DIR` | `~/.termux-mcp` | Token, pairing code, capability tokens, `policy.json`, event logs |
+| `TERMUX_MCP_LOG_EVENTS` | `1` | `0` stops the JSONL event log (`logs/events.jsonl`) |
 | `TERMUX_MCP_MAX_OUTPUT` | `20000` | Max streamed output bytes per command. Output beyond this is drained (process keeps running) but not sent; a truncation marker is appended. Keeps LLM tool results small and token-efficient. |
 
-Set `TERMUX_MCP_AUTH_TOKEN` to a value 16+ characters long to require authentication on all endpoints. When binding to a non-loopback address, authentication is mandatory.
+Pair the app once: run `termux-mcp pair` in Termux and type the 6-digit code into the app when it
+asks (the code lasts 5 minutes and 5 tries). `termux-mcp token` prints the token for other clients;
+`termux-mcp token --rotate` replaces it immediately (paired apps pair again). When binding to a
+non-loopback address, authentication cannot be switched off.
 
 ## Endpoints
 
@@ -289,6 +295,71 @@ and loaded alongside the shipped ones.
 | `/media-player` | POST | `action` | Media playback control |
 | `/storage-get` | POST | `output` | Get file via Android SAF |
 
+## Smart tools (0.12) — fewer tokens, verified results
+
+Every smart tool answers with a compact **digest** instead of raw output:
+
+```json
+{"ok": false, "exit": 100, "summary": "", "errors": [{"code": "E_PKG_NOT_FOUND", "subject": "htopp"}],
+ "fixes": [{"id": "pkg_search_name", "risk": "safe"}], "excerpt": "…", "out_ref": "8f2c1a"}
+```
+
+Only six entries are listed in `tools/list` (`run_digest`, `out_read`, `context_pack`, `batch`,
+`tool_search`, `smart`). The other ~40 are reached with `smart {tool, params}` after `tool_search`
+returns their schema, so the per-request tool list stays small. Every one is also a REST endpoint
+(`POST /<tool>`) and a WebSocket tool; native MCP results carry `structuredContent`.
+
+| Group | Tools |
+|---|---|
+| Token savers | `run_digest`, `out_read`, `digest_text`, `context_pack` (ETag), `batch`, `tool_search`, `cost_meter` |
+| Verified one-call jobs | `pkg_ensure`, `file_edit`, `service_ensure`/`service_stop`, `port_free`, `project_profile`, `project_run`, `storage_clean`, `git_sync` |
+| Zero-AI paths | `intent` (local router), `fix_lookup`/`fix_apply` (FixGraph, 40 tested fixes with live success rates), `graph_query`/`graph_refresh` (SQLite device graph), short-TTL answer cache |
+| Accuracy | `shell_lint` (auto-rewrites), `plan_check` (dry-run), `tx_begin`/`tx_status`/`tx_commit`/`tx_rollback`, `answer_check` (grounding) |
+| New capabilities | `watch_add`/`watch_list`/`watch_remove`/`watch_toggle` (event reactor), `sandbox_run`/`sandbox_apply`/`sandbox_discard`, `explain_cmd`, `snapshot_env`/`restore_env`, `screen_ocr`, `camera_scan`, `notify_ask`, `recipe_share`, `health_watch`, `task_start`/`task_status`/`task_list` |
+
+MCP resources: `termux://graph`, `termux://changes`, `termux://health`, `termux://context`, `termux://out/<ref>`.
+
+Every shell call made by a smart tool has a hard timeout and runs in its own process group, so a hung
+`termux-*` command is killed with all of its children instead of blocking the connection.
+
+## 0.13 — hardened kernel, learning, autonomy, power tools
+
+**One execution kernel.** `/run`, WebSocket `run`, MCP `run`, `run_digest` and every shell-backed
+endpoint go through `kernel.gate()` — capability scope → `policy.json` → dangerous tier → warning tier
+(with one-shot device approvals) — and share one watchdog (`TERMUX_MCP_TIMEOUT`, `termux-*` helpers
+capped at 25 s, process groups via `start_new_session`). Transport-parity tests keep all four
+answering the same way. `GET /metrics` (and the `metrics` tool) shows per-tool p50/p95 latency, error
+rates, error codes and FixGraph success rates; each call is also a line in `~/.termux-mcp/logs/events.jsonl`.
+
+**Learn once, run forever.**
+
+| Tool | What it does |
+|---|---|
+| `learn_propose` / `learn_save` | Compact a finished task (failed and exploratory steps dropped, values → slots, verify kept) into a playbook that `intent`/`do` replays with no model |
+| semantic intent | A trigram + word TF-IDF phrase bank (no dependencies) catches paraphrases: "no room left on my phone" → `storage_clean` |
+| `fix_learn` / `fix_share` | A fix that worked becomes a candidate; after 2 successes FixGraph returns it. Export/import with a checksum (imports start untrusted) |
+| `plan_cache_get` / `plan_cache_put` / `plan_replay` | The same request on the same device replays its last good plan (plan_checked first) |
+| `prompt_pack` | Only the rules/tools a task type needs instead of one big system prompt |
+
+**Autonomy with guard-rails.**
+
+| Tool | What it does |
+|---|---|
+| `goal_run` | plan_check → steps in one transaction → one known fix per failure → verify → commit, or roll back and return a decision. Budget `{steps, minutes, fixes}` |
+| `policy_get` / `policy_set` | `deny_paths`, `allow_paths`, `deny_tools`, `network`, `pip: venv_only`, `sandbox_unknown_scripts`. Tightening is free; loosening needs an on-device approval (`approve action=policy_set`) |
+| `cap_issue` / `cap_list` / `cap_revoke` | Scoped, expiring `cap_…` tokens (tools, paths, read-only) for external MCP clients, enforced on REST, WebSocket, PTY and native MCP. Only their hash is stored |
+| `dry_run: true` | On every write tool: what would happen and what the kernel would decide, nothing executed |
+| `timeline` / `undo_task` | Changes grouped by task; undo any past task, with a warning when later tasks touched the same files |
+
+**Power tools:** `venv_ensure`, `node_ensure`, `proot_ensure`/`proot_run`, `cron_ensure`, `tunnel`
+(time-limited public URL), `web_fetch` (readable text / CSS selector), `db_query` (SQLite or CSV),
+`log_watch` (reactor `log_match`), `file_find` (indexed), `backup_incremental` (dedup + verify +
+restore; encrypted via restic), `clipboard_pipe`, `share_to`, `media_convert` (ffmpeg presets with
+progress), `ssh_hosts`/`ssh_run`.
+
+All of them are reached through `smart {tool, params}` / `tool_search`, so `tools/list` stays at six
+entries.
+
 ## Streaming Output
 
 The `/run` endpoint and most tool endpoints use HTTP chunked transfer encoding. Output is sent line-by-line as the command produces it. Clients should read the response as a stream and process each chunk as it arrives.
@@ -315,11 +386,13 @@ For long-running commands, a watchdog thread enforces the timeout. Package insta
   `~/.profile`, `~/.termux/` (including `boot/`), and anything under
   `$PREFIX`. These are an SSH backdoor, code run on shell start, and code run
   at device boot respectively.
-- **Authentication.** With `TERMUX_MCP_AUTH_TOKEN` set, every endpoint
-  requires a Bearer token — POST, GET (except `/ping`, which the client's
-  connectivity probe needs before it holds a token), and the WebSocket, which
-  accepts the token via the `Authorization` header or a `?token=` query
-  parameter. Non-loopback binding enforces mandatory authentication.
+- **Authentication.** On by default. Every endpoint requires a Bearer token
+  — POST, GET (except `/ping`, which the client's connectivity probe needs
+  before it holds a token, and `POST /pair`, which exchanges a one-time,
+  rate-limited pairing code for it), and the WebSocket, which accepts the
+  token via the `Authorization` header or a `?token=` query parameter.
+  Capability tokens (`cap_…`) are accepted everywhere with their scope
+  enforced; they never get a raw PTY unless they name `terminal_open`.
 - **Network.** A request carrying an `Origin` header is rejected unless that
   origin is allowlisted, so a page open on the device cannot reach the server
   by resolving its own hostname to loopback. Requests with no `Origin` (the

@@ -18,6 +18,7 @@ from .shell import preprocess, set_current_dir
 from .styling import STYLE_TOOLS, run_style_tool
 from .terminal import interactive_program, run_terminal_tool
 from .approval import APPROVAL_TOOLS, run_approval_tool
+from .smart import MCP_DEFS as SMART_TOOL_DEFS, SMART_TOOLS, run_smart_tool
 from .playbook import requirement_ids
 from .utils import expand_home, kill_process_group, shell_quote, split_cd_chain
 from .websocket import _session_capture, _spawn_auto_input
@@ -125,7 +126,6 @@ NATIVE_TOOL_DEFS = [
         },
     },
 
-    # ── Interactive terminal (PTY) ────────────────────────────────────────
     {
         "name": "terminal_open",
         "description": (
@@ -409,6 +409,8 @@ NATIVE_TOOL_DEFS = [
     },
 ]
 
+NATIVE_TOOL_DEFS += SMART_TOOL_DEFS
+
 
 class RpcError(Exception):
     def __init__(self, code: int, message: str) -> None:
@@ -546,6 +548,7 @@ def _notify(session: MCPSession, line: str) -> None:
 def _execute_command(session: MCPSession, raw_cmd: str) -> dict:
     session.killed.clear()
     process = None
+    limit = 0
     watchdog = None
     sent_bytes = 0
     truncated = False
@@ -556,31 +559,24 @@ def _execute_command(session: MCPSession, raw_cmd: str) -> dict:
         _notify(session, text)
 
     try:
-        setsid = getattr(os, "setsid", None)
+        from . import kernel
         kwargs = {"shell": True, "stdout": subprocess.PIPE,
                   "stderr": subprocess.STDOUT, "stdin": subprocess.PIPE,
                   "text": True, "cwd": session.cwd}
-        if setsid is not None:
-            kwargs["preexec_fn"] = setsid
+        kwargs.update(kernel.popen_kwargs())
+        limit = kernel.timeout_for(raw_cmd)
+        timed_out = threading.Event()
         process = subprocess.Popen(
             f"export PAGER=cat; {preprocess(raw_cmd)}", **kwargs
         )
         session.active_pid = process.pid
         _spawn_auto_input(process, raw_cmd)
 
-        if COMMAND_TIMEOUT > 0:
-            def _watchdog():
-                try:
-                    process.wait(timeout=COMMAND_TIMEOUT)
-                except subprocess.TimeoutExpired:
-                    session.killed.set()
-                    session.kill_active()
-                    try:
-                        process.kill()
-                    except Exception:
-                        pass
-            watchdog = threading.Thread(target=_watchdog, daemon=True)
-            watchdog.start()
+        def _on_timeout():
+            timed_out.set()
+            session.killed.set()
+
+        watchdog = kernel.arm_watchdog(process, limit, _on_timeout)
 
         stdout = process.stdout
         if stdout is None:
@@ -588,7 +584,8 @@ def _execute_command(session: MCPSession, raw_cmd: str) -> dict:
             process.wait()
         for line in stdout or []:
             if session.killed.is_set():
-                append("\nCancelled\n")
+                append(f"\n⏱️ Timed out after {limit}s\n" if timed_out.is_set()
+                       else "\nCancelled\n")
                 break
             sent_bytes += len(line.encode())
             if sent_bytes <= MAX_OUTPUT_BYTES:
@@ -599,6 +596,8 @@ def _execute_command(session: MCPSession, raw_cmd: str) -> dict:
 
         if watchdog is not None:
             watchdog.join(timeout=2)
+        if timed_out.is_set() and not (chunks and "Timed out" in chunks[-1]):
+            append(f"\n⏱️ Timed out after {limit}s\n")
 
         if not session.killed.is_set():
             if process.returncode is None:
@@ -615,13 +614,14 @@ def _execute_command(session: MCPSession, raw_cmd: str) -> dict:
     except Exception as e:
         append(f"\n❌ Error: {e}\n")
     finally:
-        # Reap the child if the stream ended without it exiting — a dropped
-        # client or an exception above would otherwise leak a live process.
         kill_process_group(process)
         session.active_pid = None
 
     meta = mcp_bridge.analyze_output("".join(chunks))
-    return {"text": meta["text"], "is_error": _error_from_meta(meta)}
+    text = meta["text"]
+    if meta["timed_out"]:
+        text = (text + "\n" if text else "") + f"Timed out after {limit}s (kernel limit)"
+    return {"text": text, "is_error": _error_from_meta(meta)}
 
 
 def _error_from_meta(meta: dict) -> bool:
@@ -636,21 +636,19 @@ def _tool_run(session: MCPSession, params: dict) -> dict:
     if not cmd:
         return {"text": "Missing 'cmd'", "is_error": True}
 
-    risk = get_risk_assessment(cmd)
-    if risk["blocked"]:
-        return {"text": risk["message"], "is_error": True}
-    if risk["requires_confirmation"] and not confirmed:
+    from . import kernel
+    decision = kernel.gate(cmd, confirmed=confirmed, cwd=session.cwd)
+    if not decision["allow"] and decision["status"] != "confirm":
+        return {"text": decision["message"], "is_error": True,
+                "code": decision["code"]}
+    if decision["status"] == "confirm":
         return {
-            "text": (risk["message"] + "\n\nRe-invoke with `confirmed: true` "
-                     "to proceed."),
+            "text": (decision["message"] + "\n\nRe-invoke with `confirmed: true` "
+                     "to proceed, or approve this exact command on the device "
+                     "with the approve tool first."),
             "is_error": False,
         }
 
-    # Backstop for the routing decision. The tool descriptions ask the model to
-    # use terminal_open for these, but the cost of it forgetting is a command
-    # that never returns: no tty means the program cannot draw, and
-    # COMMAND_TIMEOUT=0 means nothing kills it. Suggest rather than redirect —
-    # the model can insist with confirmed: true, and behaviour stays predictable.
     interactive = interactive_program(cmd)
     if interactive and not confirmed:
         return {
@@ -665,11 +663,8 @@ def _tool_run(session: MCPSession, params: dict) -> dict:
             "is_error": False,
         }
 
-    snaps = snapshot_targets_from_command(cmd)
-    if snaps and not cmd.startswith("cd"):
-        hint = "; ".join(f"snapshot: {s}" for s in snaps)
-        cmd = f"echo {shell_quote(hint)}; {cmd}"
-    elif snaps:
+    cmd, snaps = kernel.prepare(cmd, str(p.get("task_id", "")))
+    if snaps and cmd.startswith("cd"):
         logger.info("Snapshots taken (cd command, not echoed): %s", snaps)
 
     if cmd.startswith("cd"):
@@ -765,6 +760,19 @@ def invoke_tool(session: MCPSession, name: str, params: dict,
     if name == "cancel":
         return _tool_cancel(session)
 
+    from . import kernel, obs
+    principal = kernel.current_principal()
+    refusal = kernel.authorize_tool(name, p, principal)
+    if refusal:
+        return {"text": refusal, "is_error": True}
+    with obs.timed("mcp", name) as call:
+        result = _invoke(session, name, p, on_progress)
+        call.result(result)
+        return result
+
+
+def _invoke(session: MCPSession, name: str, p: dict, on_progress=None) -> dict:
+
     old_cb = session.on_line
     session.on_line = on_progress
     try:
@@ -778,6 +786,8 @@ def invoke_tool(session: MCPSession, name: str, params: dict,
                     return run_style_tool(name, p)
                 if name in APPROVAL_TOOLS:
                     return run_approval_tool(name, p)
+                if name in SMART_TOOLS:
+                    return run_smart_tool(name, p)
                 return _tool_session(session, name, p)
 
         route = mcp_bridge.route_callable(name)
@@ -820,6 +830,8 @@ def call_tool(session: MCPSession, name: str, params: dict,
     if not content:
         content.append({"type": "text", "text": "(no output)"})
     out: dict = {"content": content}
+    if isinstance(result.get("digest"), dict):
+        out["structuredContent"] = result["digest"]
     if result.get("is_error"):
         out["isError"] = True
     for key in ("cancelled", "running"):
@@ -851,6 +863,18 @@ def resource_list() -> dict:
             "description": "; ".join(playbook.get("phrases") or []),
             "mimeType": "application/json",
         })
+    resources += [
+        {"uri": "termux://graph", "name": "Device graph",
+         "description": "Packages, commands, projects, services and cron on this phone",
+         "mimeType": "application/json"},
+        {"uri": "termux://changes", "name": "Recent changes",
+         "description": "Every file write/delete this server recorded, newest first",
+         "mimeType": "application/json"},
+        {"uri": "termux://health", "name": "Health report",
+         "description": "Last stored device health report", "mimeType": "application/json"},
+        {"uri": "termux://context", "name": "Context pack",
+         "description": "Compact environment summary", "mimeType": "application/json"},
+    ]
     for record in list_runs(limit=10):
         resources.append({
             "uri": f"{RUN_URI}{record.get('task_id')}",
@@ -866,6 +890,29 @@ def resource_list() -> dict:
 def resource_read(uri: str) -> dict:
     from .playbook import load_library, load_run
 
+    if uri.startswith("termux://"):
+        from .smart import context as _ctx, graph as _graph, health as _health
+        from . import changes as _changes, safety as _safety
+        from .smart.base import load_output
+        key = uri[len("termux://"):]
+        if key == "graph":
+            body = {"stats": _graph.stats(), "projects": _graph.query("projects")["facts"]["projects"],
+                    "services": _graph.query("services")["facts"]["services"]}
+        elif key == "changes":
+            body = {"changes": _changes.read(_safety.safety_root(""), limit=50)}
+        elif key == "health":
+            body = _health.report()
+        elif key == "context":
+            body = _ctx.pack()
+        elif key.startswith("out/"):
+            text = load_output(key[4:])
+            if text is None:
+                raise RpcError(INVALID_PARAMS, f"No stored output {key[4:]}")
+            return {"contents": [{"uri": uri, "mimeType": "text/plain", "text": text}]}
+        else:
+            raise RpcError(INVALID_PARAMS, f"Unknown resource: {uri}")
+        return {"contents": [{"uri": uri, "mimeType": "application/json",
+                              "text": json.dumps(body, indent=1, default=str)}]}
     if uri.startswith(PLAYBOOK_URI):
         name = uri[len(PLAYBOOK_URI):]
         playbook = load_library()["playbooks"].get(name)

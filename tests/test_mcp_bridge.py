@@ -127,7 +127,7 @@ class VirtualHandlerTests(unittest.TestCase):
         self.assertIn("all good", res["text"])
 
 
-TOOL_LIST_BUDGET_CHARS = 28_000
+TOOL_LIST_BUDGET_CHARS = 30_000
 SINGLE_TOOL_LIMIT_CHARS = 1_600
 
 
@@ -176,17 +176,6 @@ class RegistryTests(unittest.TestCase):
             self.assertIsNotNone(bridge.route_callable(name), name)
 
     def test_every_bridge_tool_invokes_without_arity_error(self):
-        """Every route must be callable as route(handler, params).
-
-        Regression test. The routes used to be returned as methods already
-        bound to a stand-in instance, which made them one-argument callables —
-        so all 27 instance-routed tools raised TypeError on every call. The
-        previous version of this test only asserted callable(), which a bound
-        method satisfies, so it passed while the tools were broken.
-
-        The executor is stubbed for every module that binds it, so this can
-        never reach a real subprocess.
-        """
         from termux_mcp import handler as handler_mod
         from termux_mcp import shell as shell_mod
         from termux_mcp.handlers import ai_power, features, history, terminal
@@ -208,7 +197,7 @@ class RegistryTests(unittest.TestCase):
             for name in bridge.bridge_tool_names():
                 route = bridge.route_callable(name)
                 self.assertIsNotNone(route, name)
-                assert route is not None  # narrows the type for checkers
+                assert route is not None
                 try:
                     route(bridge.VirtualHandler(), {})
                 except TypeError as e:
@@ -216,16 +205,12 @@ class RegistryTests(unittest.TestCase):
                         f"{name} is not callable as route(handler, params): {e}"
                     )
                 except Exception:
-                    # Empty params may legitimately fail a tool's own
-                    # validation. This test is about dispatch arity, not about
-                    # each tool accepting an empty argument set.
                     pass
         finally:
             for p in patches:
                 p.stop()
 
     def test_instance_route_reaches_the_executor(self):
-        """A bridged tool must build a command and hand it to the executor."""
         from termux_mcp import handler as handler_mod
         from termux_mcp import shell as shell_mod
 

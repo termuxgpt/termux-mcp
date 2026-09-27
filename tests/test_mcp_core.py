@@ -142,10 +142,6 @@ class SessionRegistryTests(unittest.TestCase):
 
     def test_expiry(self):
         s = core.create_session("http")
-        # Relative to now, not 0. last_used is a time.monotonic() reading and
-        # that clock counts from boot, so "0" only reads as long ago on a
-        # machine that has been up longer than the TTL — which a fresh CI
-        # runner has not.
         s.last_used = time.monotonic() - (cfg.session_ttl() + 60)
         self.assertIsNone(core.get_session(s.sid))
         self.assertIsNone(core.get_session(s.sid, touch=False))

@@ -13,11 +13,6 @@ from termux_mcp.styling import (_colors_body, _parse, find_theme, load_themes,
 
 
 def _colours_state():
-    """The colours file as it is, so a test can prove nothing touched it.
-
-    None when there is no file — which is also the answer for "did this write
-    one", since the state has to match before and after.
-    """
     if not os.path.exists(styling.COLORS_PATH):
         return None
     with open(styling.COLORS_PATH, "rb") as handle:
@@ -138,8 +133,6 @@ class TestTools:
         assert theme["colors"]["color0"]
 
     def test_preview_needs_no_confirmation(self):
-        # It changes nothing, so it must not spend a confirmation — and it must
-        # not be mistaken for an apply by whoever reads the result.
         text = run_style_tool("theme_preview", {"theme": "dracula"})["text"]
         assert "confirmed: true" not in text
         assert "Nothing has been changed" in text
@@ -288,12 +281,6 @@ class TestThemeChangesAreJournaled:
 
 
 class TestFonts:
-    """The font tool draws; it must never install or change anything.
-
-    The renderer is mocked rather than run, so these hold on a machine with
-    neither figlet nor toilet — which is where they are written.
-    """
-
     def test_parses_showfigfonts(self):
         sample = ("standard  Sample text:\n\nbig  Sample:\n\n"
                   "slant   Sample:\n")

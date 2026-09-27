@@ -10,17 +10,17 @@ import threading
 import time
 from urllib.parse import parse_qs, urlparse
 
-from .config import AUTH_TOKEN, AUTO_INPUT_INTERVAL, COMMAND_TIMEOUT, HOME, MAX_OUTPUT_BYTES, REQUIRE_AUTH
+from .config import AUTO_INPUT_INTERVAL, HOME, MAX_OUTPUT_BYTES
 from .safety import snapshot_before_write, trash_path
 from .styling import STYLE_TOOLS, run_style_tool
 from .terminal import TERMINAL_TOOLS, TerminalManager, run_terminal_tool
 from .approval import APPROVAL_TOOLS, run_approval_tool, spend
+from .smart import SMART_TOOLS, run_smart_tool
 from .security import get_risk_assessment
 from .utils import (encode_base64, expand_home, is_install_command,
                     is_safe_path, kill_process_group, require_int, shell_quote,
                     split_cd_chain)
 
-# Values termux-location accepts for -p, per the tool schema.
 LOCATION_PROVIDERS = ("gps", "network")
 
 WS_MAGIC = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -32,17 +32,10 @@ OP_PONG = 0xA
 
 _ws_session = {"name": None, "created": False}
 
-# Per-session capture offsets for session_poll. tmux sessions are global
-# (shared across connections), so this tracker is global too.
 _session_trackers = {}
 
 
 def _session_capture(sess: str, seen: int):
-    """Return (new_output_since_last_poll, new_seen_offset).
-
-    Uses capture-pane over the whole scrollback so nothing is lost between
-    polls; seen is a line-count offset into that scrollback.
-    """
     try:
         out = os.popen(
             f'tmux capture-pane -p -S - -t {shell_quote(sess)} 2>/dev/null'
@@ -57,30 +50,31 @@ def _session_capture(sess: str, seen: int):
     return "", seen
 
 
-# Per-connection state lives in a dict created in ws_handler and threaded
-# through the executor — no shared globals (each WS connection gets its own
-# cwd, mirroring the per-thread fix in shell.py for HTTP).
 TRUNCATION_MARKER = f"\n[Output truncated: max {MAX_OUTPUT_BYTES} bytes — full output not sent]\n"
 
 
-def _ws_authenticated(headers: str, path: str = "") -> bool:
-    """Check Bearer token (header or ?token= query) when auth is required."""
-    if not REQUIRE_AUTH:
-        return True
-    # Header: Authorization: Bearer <token>
+def _ws_credentials(headers: str, path: str = "") -> str:
     for line in headers.split("\r\n"):
         if line.lower().startswith("authorization:"):
             parts = line.split(":", 1)[1].strip().split(None, 1)
             if len(parts) == 2 and parts[0].lower() == "bearer":
-                return hmac.compare_digest(parts[1], AUTH_TOKEN)
-    # Query: ?token=<token> (needed by clients that can't set headers on WS)
+                return parts[1].strip()
     try:
         q = parse_qs(urlparse(path).query)
-        if q.get("token") and hmac.compare_digest(q["token"][0], AUTH_TOKEN):
-            return True
+        if q.get("token"):
+            return q["token"][0]
     except Exception:
         pass
-    return False
+    return ""
+
+
+def _ws_auth(headers: str, path: str = ""):
+    from . import auth
+    return auth.authenticate(_ws_credentials(headers, path))
+
+
+def _ws_authenticated(headers: str, path: str = "") -> bool:
+    return _ws_auth(headers, path)[0]
 
 
 def _send_ws_auth_denied(sock) -> None:
@@ -107,13 +101,10 @@ def _make_frame(payload: bytes, opcode: int = OP_TEXT) -> bytes:
     return frame + payload
 
 
-# Largest WebSocket frame accepted. Tool parameters are small; this is well
-# above anything legitimate and bounds what a malformed length can allocate.
 MAX_FRAME_BYTES = 8 * 1024 * 1024
 
 
 def _recv_exact(sock, n: int) -> bytes:
-    """Read exactly n bytes — sock.recv may return fewer (TCP stream)."""
     chunks = []
     remaining = n
     while remaining > 0:
@@ -135,9 +126,6 @@ def _read_frame(sock) -> tuple:
     elif length == 127:
         length = struct.unpack(">Q", _recv_exact(sock, 8))[0]
 
-    # The length field is attacker-controlled and was previously used
-    # directly as an allocation size — a frame declaring 2^63 bytes reached
-    # _recv_exact and tried to read it.
     if length > MAX_FRAME_BYTES:
         raise ConnectionError(f"frame too large: {length} bytes")
 
@@ -149,8 +137,6 @@ def _read_frame(sock) -> tuple:
 
 
 def _send_frame(sock, conn: dict, payload: bytes, opcode: int = OP_TEXT) -> None:
-    """Send one frame under the connection's send lock so concurrent
-    senders (worker thread + cancel) can never interleave frame bytes."""
     with conn["send_lock"]:
         sock.sendall(_make_frame(payload, opcode))
 
@@ -207,20 +193,10 @@ def _spawn_auto_input(process: subprocess.Popen, cmd: str) -> None:
     threading.Thread(target=_worker, daemon=True).start()
 
 
-# ── WebSocket tool executor ───────────────────────────────────────────────────
-
 def _ws_run_process(sock, raw_cmd: str, conn: dict) -> str:
-    """Execute a command, stream output back, and return the collected text.
-
-    Runs on a per-connection worker thread; the frame loop stays free so
-    cancel can be processed mid-command. State (pid, kill flag) lives on the
-    connection, not in globals — multiple connections can't kill each other.
-    """
     raw_cmd = raw_cmd.strip()
 
     if raw_cmd.startswith("cd"):
-        # Split before cd — see split_cd_chain() for why handle_cd cannot do
-        # this from the whole command.
         _, chained = split_cd_chain(raw_cmd[2:].strip())
         ok, msg = handle_cd(raw_cmd, conn)
         if chained:
@@ -228,8 +204,6 @@ def _ws_run_process(sock, raw_cmd: str, conn: dict) -> str:
                 _send_frame(sock, conn, f"cd: {msg}\n".encode())
                 raw_cmd = chained
             else:
-                # cd failed — report why instead of running the chain in the
-                # wrong directory.
                 _send_frame(sock, conn, f"{msg}\n".encode())
                 return msg
         else:
@@ -245,44 +219,28 @@ def _ws_run_process(sock, raw_cmd: str, conn: dict) -> str:
     collected = []
 
     try:
+        from . import kernel
         kwargs = dict(shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                       stdin=subprocess.PIPE, text=True, cwd=conn["cwd"])
-        if hasattr(os, "setsid"):
-            kwargs["preexec_fn"] = os.setsid
+        kwargs.update(kernel.popen_kwargs())
+        limit = kernel.timeout_for(raw_cmd)
         process = subprocess.Popen(f"export PAGER=cat; {cmd}", **kwargs)
 
         conn["active_pid"] = process.pid
         _spawn_auto_input(process, raw_cmd)
 
-        # Timeout watchdog — only armed when TERMUX_MCP_TIMEOUT > 0.
-        # Default 0 = commands run until they finish (pkg upgrade etc.).
-        if COMMAND_TIMEOUT > 0:
-            def _timeout_watchdog() -> None:
-                try:
-                    process.wait(timeout=COMMAND_TIMEOUT)
-                except subprocess.TimeoutExpired:
-                    killed.set()
-                    try:
-                        if hasattr(os, "killpg"):
-                            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-                            time.sleep(1)
-                        process.kill()
-                    except Exception:
-                        process.kill()
-
-            watchdog = threading.Thread(target=_timeout_watchdog, daemon=True)
-            watchdog.start()
+        watchdog = kernel.arm_watchdog(process, limit, killed.set)
 
         for line in process.stdout:
             if killed.is_set() or conn["killed"].is_set():
-                collected.append("\nCancelled\n")
+                note = (f"\nTimed out after {limit}s\n" if killed.is_set()
+                        else "\nCancelled\n")
+                collected.append(note)
                 try:
-                    _send_frame(sock, conn, b"\nCancelled\n")
+                    _send_frame(sock, conn, note.encode())
                 except Exception:
                     pass
                 break
-            # Output cap: send up to MAX_OUTPUT_BYTES, then drain silently so
-            # the process still finishes naturally (install prompts etc.).
             sent_bytes += len(line.encode())
             if sent_bytes <= MAX_OUTPUT_BYTES:
                 collected.append(line)
@@ -299,8 +257,13 @@ def _ws_run_process(sock, raw_cmd: str, conn: dict) -> str:
 
         if watchdog is not None:
             watchdog.join(timeout=2)
+        if killed.is_set() and not (collected and "Timed out" in collected[-1]):
+            collected.append(f"\nTimed out after {limit}s\n")
+            try:
+                _send_frame(sock, conn, collected[-1].encode())
+            except Exception:
+                pass
         if not killed.is_set() and not conn["killed"].is_set():
-            # Best-effort reap so the exit tag shows a real code, not None.
             if process.returncode is None:
                 try:
                     process.wait(timeout=2)
@@ -322,9 +285,6 @@ def _ws_run_process(sock, raw_cmd: str, conn: dict) -> str:
         except Exception:
             pass
     finally:
-        # Reap the child on abnormal exit. A client that disconnected
-        # mid-command, or an error in the loop above, used to leave the
-        # process running with nothing tracking it.
         kill_process_group(process)
         conn["active_pid"] = None
 
@@ -335,26 +295,21 @@ def _ws_send_json(sock, conn: dict, data: dict) -> None:
     _send_frame(sock, conn, json.dumps(data).encode())
 
 
-def _ws_risk_gate(sock, conn: dict, req_id, cmd: str, params: dict) -> bool:
-    risk = get_risk_assessment(cmd)
-
-    if not risk["blocked"] and not risk["requires_confirmation"]:
+def _ws_risk_gate(sock, conn: dict, req_id, cmd: str, params: dict,
+                  enforce_warning: bool = True) -> bool:
+    from . import kernel
+    decision = kernel.gate(cmd, confirmed=bool(params.get("confirmed")),
+                           principal=conn.get("principal"),
+                           enforce_warning=enforce_warning,
+                           cwd=conn.get("cwd", ""))
+    if decision["allow"]:
         return False
-
-    if risk["blocked"]:
-        reply = {"error": risk["message"], "is_error": True}
-    elif params.get("confirmed") or spend(cmd):
-        return False
+    if decision["status"] == "confirm":
+        reply = {"output": json.dumps(kernel.confirmation_payload(cmd, decision)),
+                 "is_error": False}
     else:
-        reply = {"output": json.dumps({
-            "status": "confirmation_required",
-            "command": cmd,
-            "risk_level": risk["risk_level"],
-            "message": risk["message"],
-            "requires_confirmation": True,
-            "hint": "Re-send with confirmed: true, or approve this exact "
-                    "command on the device with the approve tool first.",
-        }), "is_error": False}
+        reply = {"error": decision["message"], "is_error": True,
+                 "code": decision["code"]}
 
     if req_id is None:
         _send_frame(sock, conn,
@@ -376,30 +331,50 @@ def _ws_bridge_tool(tool: str, params: dict):
 
 
 def _ws_reply(sock, conn, req_id, data: dict) -> None:
-    """Send a tool result WITH the request id — the client completes the
-    pending request only when it sees `_id`. Without this every WS call
-    hangs on the client until its own timeout."""
     payload = dict(data)
     payload["_id"] = req_id
+    conn["_last_reply"] = data
     _ws_send_json(sock, conn, payload)
 
 
 def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
-    """Execute any tool and stream output via WebSocket."""
+    from . import kernel, obs
+    if tool == "cancel":
+        _ws_execute_tool_inner(sock, tool, params, conn, req_id)
+        return
+    principal = conn.get("principal")
+    refusal = kernel.authorize_tool(str(tool), params or {}, principal)
+    if refusal:
+        reply = {"error": refusal, "is_error": True,
+                 "code": "E_CAPABILITY" if principal is not None else "E_POLICY"}
+        if req_id is None:
+            _send_frame(sock, conn, (refusal + "\n").encode())
+        else:
+            _ws_reply(sock, conn, req_id, reply)
+        return
+    conn["_last_reply"] = None
+    with kernel.acting_as(principal), obs.timed("ws", str(tool)) as call:
+        _ws_execute_tool_inner(sock, tool, params, conn, req_id)
+        last = conn.get("_last_reply")
+        if isinstance(last, dict):
+            call.result(last.get("digest") if isinstance(last.get("digest"), dict) else last)
+            call.ok = call.ok and not last.get("is_error") and not last.get("error")
+
+
+def _ws_execute_tool_inner(sock, tool: str, params: dict, conn: dict, req_id) -> None:
     p = params or {}
 
     if tool == "run":
-        cmd = p.get("cmd", "")
+        cmd = str(p.get("cmd", "")).strip()
         if _ws_risk_gate(sock, conn, req_id, cmd, p):
             return
+        from . import kernel
+        cmd, _snaps = kernel.prepare(cmd, str(p.get("task_id", "")))
         out = _ws_run_process(sock, cmd, conn)
-        # Legacy clients (live terminal) send no _id and only stream text —
-        # skip the JSON reply for them.
         if req_id is not None:
             _ws_reply(sock, conn, req_id,{"output": out})
         return
 
-    # Build and execute command for each tool type
     cmd = None
 
     if tool == "ls":
@@ -471,22 +446,35 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         cmd = f'find {shell_quote(path)} -name {shell_quote(pattern)} -type f 2>/dev/null | head -n 30'
 
     elif tool == "cancel":
-        # Per-connection cancel: flag the running command and kill its pid.
-        # Runs on the frame-loop thread (no lock needed) so it can interrupt
-        # a command that is mid-stream on another thread.
         conn["killed"].set()
         pid = conn["active_pid"]
         ok = False
         if pid is not None:
-            try:
-                os.kill(pid, signal.SIGTERM)
-                ok = True
-            except (ProcessLookupError, OSError):
-                ok = False
+            def _kill(sig: int) -> bool:
+                try:
+                    if hasattr(os, "killpg"):
+                        os.killpg(pid, sig)
+                    else:
+                        os.kill(pid, sig)
+                    return True
+                except (ProcessLookupError, PermissionError, OSError):
+                    try:
+                        os.kill(pid, sig)
+                        return True
+                    except (ProcessLookupError, OSError):
+                        return False
+
+            ok = _kill(signal.SIGTERM)
+
+            def _escalate() -> None:
+                time.sleep(1.5)
+                if conn.get("active_pid") == pid:
+                    _kill(signal.SIGKILL)
+
+            threading.Thread(target=_escalate, daemon=True).start()
         _ws_reply(sock, conn, req_id,{"cancelled": ok})
         return
 
-    # Device tools
     elif tool == "screenshot":
         output = p.get("output", "")
         cmd = f"termux-screenshot {'-o ' + shell_quote(output) if output else ''} 2>/dev/null || echo Screenshot failed"
@@ -524,7 +512,6 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
             return
         cmd = f"echo {shell_quote(text)} | termux-clipboard-set && echo 'Clipboard set' || echo Failed"
 
-    # Communication
     elif tool == "notify":
         title = p.get("title", "TermuxGPT")
         content = p.get("content", "")
@@ -568,14 +555,11 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
             _ws_reply(sock, conn, req_id,{"error": "Missing text or file"})
             return
 
-    # Smart
     elif tool == "smart_install":
         packages = p.get("packages", "")
         if not packages:
             _ws_reply(sock, conn, req_id,{"error": "Missing packages"})
             return
-        # Quote each package separately — quoting the joined list would pass
-        # "a b" to pkg as a single package name.
         pkg_args = " ".join(shell_quote(pk) for pk in packages.split())
         cmd = f"pkg install -y {pkg_args} 2>&1 | tail -30"
 
@@ -597,7 +581,6 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
                'df -h /data 2>/dev/null; echo "---"; '
                'ps aux --sort=-%mem 2>/dev/null | head -8')
 
-    # Network
     elif tool == "download":
         url = p.get("url", "")
         if not url:
@@ -615,7 +598,6 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
     elif tool == "speedtest":
         cmd = "speedtest-cli --simple 2>/dev/null || echo 'Install: pkg install speedtest-cli'"
 
-    # Media
     elif tool == "qrcode":
         text = p.get("text", "")
         output = p.get("output", "qr.png")
@@ -652,13 +634,8 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
             return
         cmd = f"tesseract {shell_quote(inp)} stdout 2>/dev/null || echo 'Install: pkg install tesseract'"
 
-    # Monitor & Manage
     elif tool == "system_info":
         cmd = ('cpu=$(top -bn1 2>/dev/null | grep -oP "[0-9.]+%" | head -1 | tr -d "%" || echo 0);'
-               # Raw literals: the backslash before $ is intentional — it stops
-               # the outer double quotes expanding it, so awk receives $2. In a
-               # non-raw literal Python warns "invalid escape sequence '\$'",
-               # which becomes an error in a future version.
                r'ram_total=$(free -m 2>/dev/null | awk "/Mem:/{print \$2}" || echo 0);'
                r'ram_used=$(free -m 2>/dev/null | awk "/Mem:/{print \$3}" || echo 0);'
                r'disk_total=$(df -m /data 2>/dev/null | awk "END{print \$2}" || echo 0);'
@@ -689,7 +666,6 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
                'echo "Storage: $(df -h /data 2>/dev/null | tail -1)"; '
                'ping -c 1 -W 2 google.com >/dev/null 2>&1 && echo "Internet: OK" || echo "Internet: UNREACHABLE"')
 
-    # Cron & Backup
     elif tool == "cron_add":
         schedule = p.get("schedule", "")
         command = p.get("command", "")
@@ -747,7 +723,6 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         else:
             cmd = f'ls -lh {HOME}/*.tar.gz 2>/dev/null || echo "No local backups"'
 
-    # Git PR
     elif tool == "git_pr":
         action = p.get("action", "list")
         repo = p.get("repo", "")
@@ -780,7 +755,6 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         else:
             cmd = 'echo "Actions: list view diff merge approve status create"'
 
-    # Recipes
     elif tool == "recipe_list":
         from .handlers.features import _load_recipes
         recipes = _load_recipes()
@@ -815,7 +789,6 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         _ws_reply(sock, conn, req_id,{"saved": recipe_id, "total": len(recipes)})
         return
 
-    # Context
     elif tool == "context":
         from .handlers.features import CONTEXT_FILE
         try:
@@ -844,7 +817,6 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
             _ws_reply(sock, conn, req_id,{"error": str(e)})
         return
 
-    # History
     elif tool == "history":
         from .handlers.history import _load
         entries = _load()
@@ -885,7 +857,6 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
             _ws_reply(sock, conn, req_id,{"error": str(e)})
         return
 
-    # Session (tmux)
     elif tool == "session_start":
         name = p.get("name", "termux-mcp")
         exists = os.popen(
@@ -893,7 +864,6 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         ).read().strip() == "yes"
         if not exists:
             os.system(f'tmux new-session -d -s {shell_quote(name)} 2>/dev/null')
-        # Large scrollback so session_poll never loses output.
         os.system(
             f'tmux set-option -t {shell_quote(name)} history-limit 20000 2>/dev/null'
         )
@@ -907,9 +877,6 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         return
 
     elif tool == "session_run":
-        # NON-BLOCKING: send the command into the tmux session and return
-        # quickly with initial output. The connection lock is held only for
-        # this short call — a 20-minute build no longer blocks other tools.
         sess_name = p.get("session") or _ws_session.get("name") or "termux-mcp"
         cmd_to_run = p.get("cmd", "")
         if not cmd_to_run:
@@ -931,7 +898,7 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         os.system(
             f'tmux send-keys -t {shell_quote(sess_name)} {shell_quote(cmd_to_run)} Enter'
         )
-        time.sleep(1.2)  # brief initial capture — bounded, not 60s
+        time.sleep(1.2)
         initial, tracker["seen"] = _session_capture(sess_name, tracker["seen"])
         preview = initial.strip()
         if len(preview) > 2000:
@@ -989,6 +956,15 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         })
         return
 
+    elif tool in SMART_TOOLS:
+        result = run_smart_tool(tool, p)
+        _ws_reply(sock, conn, req_id, {
+            "output": result.get("text", ""),
+            "is_error": bool(result.get("is_error")),
+            "digest": result.get("digest"),
+        })
+        return
+
     elif tool in TERMINAL_TOOLS:
         result = run_terminal_tool(tool, p)
         reply = {"output": result.get("text", ""),
@@ -1010,19 +986,18 @@ def _ws_execute_tool(sock, tool: str, params: dict, conn: dict, req_id) -> None:
         return
 
     if cmd:
-        # Every shell-backed tool must reply with _id — otherwise the client
-        # hangs forever (it completes requests only on an _id frame).
+        if _ws_risk_gate(sock, conn, req_id, cmd, p, enforce_warning=False):
+            return
         out = _ws_run_process(sock, cmd, conn)
         if req_id is not None:
             _ws_reply(sock, conn, req_id, {"output": out})
         return
 
 
-# ── WebSocket handler ─────────────────────────────────────────────────────────
-
 
 def ws_handler(sock, raw_headers: str, path: str = "") -> None:
-    if not _ws_authenticated(raw_headers, path):
+    allowed, principal = _ws_auth(raw_headers, path)
+    if not allowed:
         _send_ws_auth_denied(sock)
         sock.close()
         return
@@ -1031,12 +1006,9 @@ def ws_handler(sock, raw_headers: str, path: str = "") -> None:
         sock.close()
         return
 
-    # Per-connection state: own cwd, own active pid, own kill flag, and a
-    # lock so only one tool runs at a time on this connection. `cancel` is
-    # the exception — it runs on the frame loop without the lock so it can
-    # interrupt a command streaming on the worker thread.
     conn = {"cwd": HOME, "active_pid": None, "killed": threading.Event(),
-            "lock": threading.Lock(), "send_lock": threading.Lock()}
+            "lock": threading.Lock(), "send_lock": threading.Lock(),
+            "principal": principal}
 
     try:
         while True:
@@ -1057,14 +1029,10 @@ def ws_handler(sock, raw_headers: str, path: str = "") -> None:
                 req_id = msg.get("_id")
 
                 if tool == "cancel":
-                    # Interrupt path — must NOT wait for the worker lock.
                     _ws_execute_tool(sock, "cancel", params, conn, req_id)
                     continue
 
                 if tool is None and msg.get("cmd"):
-                    # Backward compat: legacy {"cmd": "..."} live-terminal
-                    # messages — stream only, no _id, no JSON reply. Shares
-                    # the connection lock so it can't race a tool call.
                     def _legacy(cmd=msg["cmd"]):
                         with conn["lock"]:
                             try:
@@ -1094,12 +1062,6 @@ def ws_handler(sock, raw_headers: str, path: str = "") -> None:
             pass
 
 
-# ── PTY terminal endpoint ─────────────────────────────────────────────────────
-# A separate route from /ws: that one serialises every tool call behind
-# conn["lock"], and the PTY reader blocks its socket when a client is slow,
-# which would stall every tool call in the app. Binary frames carry raw PTY
-# bytes in both directions; text frames carry control messages.
-
 
 def _coerce_int(value, default: int) -> int:
     try:
@@ -1113,7 +1075,11 @@ def _qp_int(query: dict, key: str, default: int) -> int:
 
 
 def pty_handler(sock, raw_headers: str, path: str = "") -> None:
-    if not _ws_authenticated(raw_headers, path):
+    allowed, principal = _ws_auth(raw_headers, path)
+    if allowed and principal is not None and (
+            principal.read_only or not principal.allows_tool("terminal_open")):
+        allowed = False
+    if not allowed:
         _send_ws_auth_denied(sock)
         try:
             sock.close()
@@ -1215,7 +1181,6 @@ def pty_handler(sock, raw_headers: str, path: str = "") -> None:
     except Exception:
         pass
     finally:
-        # Detach, do not kill: the shell outlives this socket.
         session.detach(token)
         try:
             sock.close()

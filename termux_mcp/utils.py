@@ -16,18 +16,7 @@ def shell_quote(s: str) -> str:
 
 
 def require_number(value, *, minimum=None, maximum=None) -> str:
-    """Validate that a parameter is numeric and return it for interpolation.
-
-    Numeric-looking parameters are interpolated straight into shell strings in
-    many places (``-n {limit}``, ``-crf {crf}``, ``--id {nid}``), so this is
-    the gate for them. Anything that is not actually a number raises rather
-    than being passed through: a value like ``1; touch /tmp/x`` is a string,
-    not a number, and must never reach the shell.
-
-    Raises ValueError, which handlers surface as a 400.
-    """
     if isinstance(value, bool):
-        # bool is an int subclass; "True" is never a valid numeric argument.
         raise ValueError(f"Expected a number, got {value!r}")
 
     try:
@@ -35,8 +24,6 @@ def require_number(value, *, minimum=None, maximum=None) -> str:
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Expected a number, got {value!r}") from exc
 
-    # float("nan") and float("inf") parse happily and would produce a
-    # nonsensical but injectable-looking argument.
     if num != num or num in (float("inf"), float("-inf")):
         raise ValueError(f"Expected a finite number, got {value!r}")
 
@@ -51,27 +38,23 @@ def require_number(value, *, minimum=None, maximum=None) -> str:
 
 
 def require_int(value, *, minimum=None, maximum=None) -> str:
-    """Like require_number, but rejects fractional values.
-
-    For parameters that are structurally integers — pids, limits, camera ids,
-    signal numbers.
-    """
     out = require_number(value, minimum=minimum, maximum=maximum)
     if "." in out or "e" in out.lower():
         raise ValueError(f"Expected a whole number, got {value!r}")
     return out
 
 
-# Legacy name. It never validated — it coerced, and fell back to quoting — so
-# numeric-looking parameters that were not numeric slipped through to the
-# shell. Now it validates. Kept so existing call sites gain the check without
-# every one of them being rewritten in the same change.
 shell_quote_num = require_number
 
 
 def json_response(handler, status: int, data: dict) -> None:
     import json
     body = json.dumps(data).encode("utf-8")
+    try:
+        handler._last_status = status
+        handler._last_payload = data
+    except AttributeError:
+        pass
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json")
     handler.send_header("Content-Length", str(len(body)))
@@ -98,14 +81,6 @@ def is_safe_path(path: str) -> bool:
 
 
 def tmp_dir() -> str:
-    """A directory this process can actually write temporary files to.
-
-    Termux has $TMPDIR ($PREFIX/tmp) and that works. It also has /tmp — the
-    Android system one, owned by `shell` with mode 0771 — which this process
-    can traverse but NOT write to. Handlers that hardcoded /tmp therefore
-    failed with "Permission denied": /patch could never apply a diff, and
-    migrate could neither back up nor restore.
-    """
     candidates = [
         os.environ.get("TMPDIR", ""),
         os.path.join(
@@ -119,24 +94,6 @@ def tmp_dir() -> str:
 
 
 def split_cd_chain(rest: str) -> tuple:
-    """Split the part after "cd " into (path, chained_command_or_None).
-
-    The EARLIEST separator wins, whether that is ";" or "&&".
-
-    Scanning for one separator before the other takes everything up to a match
-    that may sit inside the chained command. With ";" checked first,
-
-        cd Bull-Attack && python2 B-attack.py 2>&1 | head -30; echo done
-
-    found the ";" before `echo` — which is *after* the "&&" — so the path came
-    out as "Bull-Attack && python2 B-attack.py 2>&1 | head -30", the whole
-    chain, and the user was told that directory does not exist. `cd x && cmd`
-    is the pattern the system prompt tells the model to use, so this failed on
-    the most common shape of command.
-
-    Returns the path with trailing whitespace stripped, and the remainder
-    (stripped) or None when there is no chain.
-    """
     cut_at = None
     cut_sep = None
     for sep in (";", "&&"):
@@ -147,16 +104,11 @@ def split_cd_chain(rest: str) -> tuple:
     if cut_at is None:
         return rest.strip(), None
 
-    assert cut_sep is not None  # set whenever cut_at is
+    assert cut_sep is not None
     return rest[:cut_at].strip(), rest[cut_at + len(cut_sep):].strip()
 
 
 def expand_home(path: str, home: str) -> str:
-    """Expand a leading "~" to home, and only a leading one.
-
-    str.replace("~", home, 1) replaces the first tilde *anywhere*, so
-    "/opt/~backup" became "/opt//data/.../homebackup".
-    """
     if path == "~":
         return home
     if path.startswith("~/"):
@@ -165,21 +117,6 @@ def expand_home(path: str, home: str) -> str:
 
 
 def kill_process_group(process) -> None:
-    """Terminate a spawned child and anything it started, if still running.
-
-    Commands are spawned with ``preexec_fn=os.setsid``, so the child is a
-    session leader and its process group id equals its pid — killing the
-    group takes down its descendants too.
-
-    This exists because nothing used to kill the child at all. All three
-    executors cleared their bookkeeping in ``finally`` and left the process
-    running, and because COMMAND_TIMEOUT defaults to 0 the watchdog never
-    armed. A client that disconnected mid-command, or any exception in the
-    streaming loop, therefore left a process running forever — untracked and
-    uncancellable.
-
-    Safe to call on the normal path: an already-reaped process is a no-op.
-    """
     if process is None:
         return
     try:
@@ -203,14 +140,10 @@ def kill_process_group(process) -> None:
         pass
 
 
-# Paths under $HOME that grant persistence or credential access when written.
-# Writing here is not refused — editing files is what this server is for — but
-# it requires an explicit confirmation. The difference these represent is
-# between "changed a config" and "installed something that survives a reboot".
 _SENSITIVE_HOME_PREFIXES = (
-    ".ssh/",           # authorized_keys -> SSH into the device
-    ".termux/",        # boot/start.sh -> runs at device boot
-    ".bashrc",         # runs on every interactive shell
+    ".ssh/",
+    ".termux/",
+    ".bashrc",
     ".bash_profile",
     ".profile",
     ".zshrc",
@@ -218,24 +151,16 @@ _SENSITIVE_HOME_PREFIXES = (
 )
 
 
-# Directory names under $PREFIX that put code or configuration where it will be
-# executed or trusted. Deliberately not all of $PREFIX — see is_sensitive_path.
 _SENSITIVE_PREFIX_PARTS = ("bin", "etc", "libexec")
 
 
 def is_sensitive_path(path: str) -> bool:
-    """True if a path can be used to gain persistent access to the device.
-
-    Also covers anything under $PREFIX (Termux's usr/), which holds the
-    binaries and sshd configuration — writing there is installing software.
-    """
     if not path or not isinstance(path, str):
         return False
 
     try:
         real = os.path.realpath(os.path.expanduser(path)).replace("\\", "/")
     except (ValueError, OSError):
-        # Cannot resolve it, so cannot vouch for it.
         return True
 
     home = os.path.expanduser("~").replace("\\", "/").rstrip("/")
@@ -244,12 +169,6 @@ def is_sensitive_path(path: str) -> bool:
         if rel.startswith(_SENSITIVE_HOME_PREFIXES):
             return True
 
-    # Only the parts of $PREFIX that hold code or configuration, NOT all of it.
-    #
-    # Testing on a device showed why: $TMPDIR is $PREFIX/tmp, so treating the
-    # whole prefix as sensitive made writing an ordinary temporary file require
-    # confirmation. bin/ is on PATH so anything there gets executed, etc/ holds
-    # sshd_config, and libexec/ is the same idea.
     prefix = os.environ.get(
         "PREFIX", "/data/data/com.termux/files/usr"
     ).replace("\\", "/").rstrip("/")
