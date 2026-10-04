@@ -19,7 +19,7 @@ from .smart import SMART_TOOLS, run_smart_tool
 from .security import get_risk_assessment
 from .utils import (encode_base64, expand_home, is_install_command,
                     is_safe_path, kill_process_group, require_int, shell_quote,
-                    split_cd_chain)
+                    split_cd_chain, user_path)
 
 LOCATION_PROVIDERS = ("gps", "network")
 
@@ -378,7 +378,7 @@ def _ws_execute_tool_inner(sock, tool: str, params: dict, conn: dict, req_id) ->
     cmd = None
 
     if tool == "ls":
-        path = p.get("path") or "."
+        path = user_path(p.get("path") or ".")
         flags = "-la"
         if p.get("bare"):
             flags = "-1"
@@ -391,7 +391,7 @@ def _ws_execute_tool_inner(sock, tool: str, params: dict, conn: dict, req_id) ->
             return
 
     elif tool == "read":
-        path = p.get("path", "")
+        path = user_path(p.get("path", ""))
         if not path:
             _ws_reply(sock, conn, req_id,{"error": "Missing path"})
             return
@@ -401,7 +401,7 @@ def _ws_execute_tool_inner(sock, tool: str, params: dict, conn: dict, req_id) ->
         cmd = f'head -n 500 {shell_quote(path)} 2>/dev/null || echo Cannot read: {shell_quote(path)}'
 
     elif tool == "write":
-        path = p.get("path", "")
+        path = user_path(p.get("path", ""))
         content = p.get("content", "")
         if not path:
             _ws_reply(sock, conn, req_id,{"error": "Missing path"})
@@ -417,14 +417,15 @@ def _ws_execute_tool_inner(sock, tool: str, params: dict, conn: dict, req_id) ->
                f'echo Written: {shell_quote(path)}')
 
     elif tool == "mkdir":
-        path = p.get("path", "")
+        path = user_path(p.get("path", ""))
         if not path or not is_safe_path(path):
             _ws_reply(sock, conn, req_id,{"error": "Invalid path"})
             return
-        cmd = f'mkdir -p {shell_quote(path)} && echo Created: {shell_quote(path)}'
+        q = shell_quote(path)
+        cmd = f'if [ -d {q} ]; then echo "Already exists: "{q}" (nothing created)"; else mkdir -p {q} && echo Created: {q}; fi'
 
     elif tool == "delete":
-        path = p.get("path", "")
+        path = user_path(p.get("path", ""))
         if not path or not is_safe_path(path):
             _ws_reply(sock, conn, req_id,{"error": "Invalid path"})
             return
@@ -438,7 +439,7 @@ def _ws_execute_tool_inner(sock, tool: str, params: dict, conn: dict, req_id) ->
         return
 
     elif tool == "search":
-        path = p.get("path") or "."
+        path = user_path(p.get("path") or ".")
         pattern = p.get("pattern") or p.get("query") or p.get("name") or "*"
         if not is_safe_path(path):
             _ws_reply(sock, conn, req_id,{"error": "Path not allowed"})
@@ -665,27 +666,6 @@ def _ws_execute_tool_inner(sock, tool: str, params: dict, conn: dict, req_id) ->
                'echo "Git: $(git --version 2>&1)"; '
                'echo "Storage: $(df -h /data 2>/dev/null | tail -1)"; '
                'ping -c 1 -W 2 google.com >/dev/null 2>&1 && echo "Internet: OK" || echo "Internet: UNREACHABLE"')
-
-    elif tool == "cron_add":
-        schedule = p.get("schedule", "")
-        command = p.get("command", "")
-        label = p.get("label", "task")
-        if not schedule or not command:
-            _ws_reply(sock, conn, req_id,{"error": "Missing schedule or command"})
-            return
-        cmd = (f'(crontab -l 2>/dev/null; echo "# {label}"; '
-               f'echo "{schedule} {command}") | crontab - 2>&1 && '
-               f'echo "Cron added: {label}" || echo "Failed - install: pkg install cronie"')
-
-    elif tool == "cron_list":
-        cmd = 'echo "Cron Jobs:"; crontab -l 2>&1 || echo "No cron jobs"'
-
-    elif tool == "cron_remove":
-        label = p.get("label", "")
-        if label:
-            cmd = f'crontab -l 2>/dev/null | grep -v "{label}" | crontab - 2>&1 && echo "Removed: {label}" || echo "Failed"'
-        else:
-            cmd = 'crontab -r 2>&1 && echo "All cron jobs removed" || echo "No cron jobs"'
 
     elif tool == "backup":
         target = p.get("target", "home")

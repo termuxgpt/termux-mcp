@@ -187,3 +187,12 @@ def is_install_command(cmd: str) -> bool:
 
 def encode_base64(content: str) -> str:
     return base64.b64encode(content.encode("utf-8")).decode("ascii")
+
+
+def user_path(path) -> str:
+    p = str(path or "").strip()
+    home = os.environ.get("HOME", "/data/data/com.termux/files/home")
+    for prefix in ("~", "$HOME", "${HOME}"):
+        if p == prefix or p.startswith(prefix + "/"):
+            return home.rstrip("/") + p[len(prefix):]
+    return p

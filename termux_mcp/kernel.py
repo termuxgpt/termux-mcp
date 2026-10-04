@@ -141,7 +141,7 @@ def authorize_tool(name: str, params=None, principal=None) -> str:
 PATH_KEYS = ("path", "file", "dest", "src", "cwd", "dir", "input", "output", "image", "target", "root")
 
 WRITE_TOOLS = frozenset({
-    "run", "write", "delete", "mkdir", "patch", "move", "copy", "cron-add", "cron_add", "service-guard",
+    "run", "write", "delete", "mkdir", "patch", "move", "copy", "cron-add", "cron_add", "cron_remove", "cron_toggle", "cron_update", "cron_setup", "git_commit", "service_watch", "service-guard",
     "run_digest", "pkg_ensure", "file_edit", "service_ensure", "service_stop", "port_free", "project_run",
     "storage_clean", "git_sync", "fix_apply", "tx_rollback", "watch_add", "watch_remove", "watch_toggle",
     "sandbox_apply", "restore_env", "recipe_share", "task_start", "learn_save", "fix_learn", "fix_share",
@@ -251,6 +251,12 @@ def prepare(cmd: str, task_id: str = "", echo: bool = True, record: bool = True)
         snaps = []
     if record:
         record_action(task_id, cmd)
+        try:
+            from . import changes
+            from .safety import safety_root
+            changes.record_packages(safety_root(""), cmd, task_id or "")
+        except Exception:
+            pass
     if echo and snaps and not cmd.strip().startswith("cd"):
         hint = "; ".join(f"snapshot: {s}" for s in snaps)
         cmd = f"echo {shell_quote(hint)}; {cmd}"

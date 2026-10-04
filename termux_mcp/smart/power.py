@@ -1375,3 +1375,84 @@ def ssh_run(host: str, cmd: str, timeout: int = 60, confirmed: bool = False) -> 
         body["errors"] = [{"code": "E_SSH", "msg": (res.err.strip().splitlines() or ["ssh failed"])[-1][:200]}]
         body["hint"] = "key auth only (BatchMode): ssh-copy-id first, or save a key with ssh_hosts"
     return body
+
+
+DOC_TOOLS = {
+    "pdf_merge": ("qpdf", "qpdf"),
+    "images_to_pdf": ("magick", "imagemagick"),
+    "image_compress": ("magick", "imagemagick"),
+    "pdf_text": ("pdftotext", "poppler"),
+}
+
+
+def doc_tool(action: str = "", inputs=None, output: str = "", quality: int = 75, max_width: int = 1600,
+             overwrite: bool = False) -> dict:
+    action = str(action or "").strip()
+    if action not in DOC_TOOLS:
+        return _err("E_ARGS", f"action: {', '.join(DOC_TOOLS)}")
+    if isinstance(inputs, str):
+        inputs = [inputs]
+    srcs = [_path(i) for i in (inputs or []) if str(i or "").strip()]
+    if not srcs:
+        return _err("E_ARGS", "inputs: one or more files")
+    missing = [s for s in srcs if not os.path.isfile(s)]
+    if missing:
+        return _err("E_NO_FILE", f"no such file: {missing[0]}")
+    for s in srcs:
+        reason = _policy_path(s)
+        if reason:
+            return _err("E_POLICY", reason)
+    binary, package = DOC_TOOLS[action]
+    if not base.which(binary):
+        return _err("E_NOT_FOUND_CMD", f"{binary} is not installed",
+                    fixes=[{"id": "pkg_install", "steps": [f"pkg install -y {package}"]}])
+    q = shlex.quote
+    if action == "pdf_text":
+        res, body = _run(f"pdftotext -layout {q(srcs[0])} - | head -c 20000", timeout=120)
+        return dict(body, input=srcs[0])
+    if action == "image_compress":
+        out_dir = _path(output) if output else os.path.join(os.path.dirname(srcs[0]), "compressed")
+        reason = _policy_path(out_dir, write=True)
+        if reason:
+            return _err("E_POLICY", reason)
+        os.makedirs(out_dir, exist_ok=True)
+        results, before, after = [], 0, 0
+        for s in srcs:
+            dest = os.path.join(out_dir, os.path.splitext(os.path.basename(s))[0] + ".jpg")
+            if os.path.exists(dest) and not overwrite:
+                return _err("E_EXISTS", f"{dest} exists; pass overwrite: true")
+            geometry = q(f"{int(max_width)}x{int(max_width)}>")
+            res, body = _run(f"magick {q(s)} -auto-orient -resize {geometry} "
+                             f"-strip -quality {int(quality)} {q(dest)}", timeout=120)
+            if not res.ok:
+                return dict(body, ok=False, failed_on=s)
+            before += os.path.getsize(s)
+            after += os.path.getsize(dest)
+            results.append(dest)
+        saved = 100 - round(after * 100 / before) if before else 0
+        return {"ok": True, "outputs": results, "output_dir": out_dir,
+                "summary": f"{len(results)} image(s): {_human_size(before)} -> {_human_size(after)} ({saved}% smaller)"}
+    out = _path(output)
+    if not out:
+        return _err("E_ARGS", "output: the PDF to write")
+    reason = _policy_path(out, write=True)
+    if reason:
+        return _err("E_POLICY", reason)
+    if os.path.exists(out) and not overwrite:
+        return _err("E_EXISTS", f"{out} exists; pass overwrite: true")
+    files = " ".join(q(s) for s in srcs)
+    cmd = (f"qpdf --empty --pages {files} -- {q(out)}" if action == "pdf_merge"
+           else f"magick {files} -auto-orient {q(out)}")
+    res, body = _run(cmd, timeout=300)
+    if not res.ok or not os.path.isfile(out):
+        return dict(body, ok=False)
+    return {"ok": True, "output": out, "pages_from": len(srcs),
+            "summary": f"wrote {out} ({_human_size(os.path.getsize(out))}) from {len(srcs)} file(s)"}
+
+
+def _human_size(n: float) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024:
+            return f"{n:.0f}{unit}" if unit == "B" else f"{n:.1f}{unit}"
+        n /= 1024
+    return f"{n:.1f}TB"

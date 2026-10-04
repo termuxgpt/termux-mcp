@@ -23,6 +23,7 @@ from .handlers.terminal import (
 from .handlers.features import (
     handle_system_info, handle_process_list, handle_process_kill,
     handle_cron_add, handle_cron_list, handle_cron_remove,
+    handle_cron_status, handle_cron_toggle, handle_cron_update, handle_cron_setup,
     handle_diff, handle_patch, handle_health, handle_cloud_sync,
     handle_git_pr, handle_recipe_list, handle_recipe_run, handle_recipe_save,
     handle_context, handle_context_save,
@@ -34,7 +35,7 @@ from .handlers.doctor import (handle_capsule, handle_do, handle_doctor,
                               handle_harvest, handle_playbooks)
 from .utils import (
     shell_quote, shell_quote_num, require_int, require_number, is_safe_path,
-    is_sensitive_path, json_response, is_install_command, encode_base64,
+    is_sensitive_path, json_response, is_install_command, encode_base64, user_path,
 )
 from .tools_schema import OPENAI_TOOLS, build_catalog
 from .styling import STYLE_TOOLS, run_style_tool
@@ -500,14 +501,26 @@ class MCPHandler(BaseHTTPRequestHandler):
         if path == "/process-kill":
             handle_process_kill(self, data)
             return
-        if path == "/cron-add":
+        if path in ("/cron-add", "/cron_add"):
             handle_cron_add(self, data)
             return
-        if path == "/cron-list":
+        if path in ("/cron-list", "/cron_list"):
             handle_cron_list(self, data)
             return
-        if path == "/cron-remove":
+        if path in ("/cron-remove", "/cron_remove"):
             handle_cron_remove(self, data)
+            return
+        if path in ("/cron-status", "/cron_status"):
+            handle_cron_status(self, data)
+            return
+        if path in ("/cron-toggle", "/cron_toggle"):
+            handle_cron_toggle(self, data)
+            return
+        if path in ("/cron-update", "/cron_update"):
+            handle_cron_update(self, data)
+            return
+        if path in ("/cron-setup", "/cron_setup"):
+            handle_cron_setup(self, data)
             return
         if path == "/diff":
             handle_diff(self, data)
@@ -624,7 +637,7 @@ class MCPHandler(BaseHTTPRequestHandler):
         execute_streaming(self, cmd)
 
     def _handle_ls(self, data: dict) -> None:
-        path = (data.get("path") or ".").strip()
+        path = user_path(data.get("path") or ".")
         if not is_safe_path(path):
             json_response(self,403, {"error": "Path not allowed"})
             return
@@ -636,7 +649,7 @@ class MCPHandler(BaseHTTPRequestHandler):
         execute_streaming(self, f'ls {flags} {shell_quote(path)} 2>/dev/null || echo Cannot access: {shell_quote(path)}')
 
     def _handle_read(self, data: dict) -> None:
-        path = (data.get("path") or "").strip()
+        path = user_path(data.get("path") or "")
         if not path:
             json_response(self,400, {"error": "Missing 'path'"})
             return
@@ -646,7 +659,7 @@ class MCPHandler(BaseHTTPRequestHandler):
         execute_streaming(self, f'head -n 500 {shell_quote(path)} 2>/dev/null || echo Cannot read: {shell_quote(path)}')
 
     def _handle_write(self, data: dict) -> None:
-        path = (data.get("path") or "").strip()
+        path = user_path(data.get("path") or "")
         content = (data.get("content") or "")
         if not path:
             json_response(self,400, {"error": "Missing 'path'"})
@@ -682,17 +695,18 @@ class MCPHandler(BaseHTTPRequestHandler):
         )
 
     def _handle_mkdir(self, data: dict) -> None:
-        path = (data.get("path") or "").strip()
+        path = user_path(data.get("path") or "")
         if not path:
             json_response(self,400, {"error": "Missing 'path'"})
             return
         if not is_safe_path(path):
             json_response(self,403, {"error": "Path not allowed"})
             return
-        execute_streaming(self, f'mkdir -p {shell_quote(path)} && echo Created: {shell_quote(path)}')
+        q = shell_quote(path)
+        execute_streaming(self, f'if [ -d {q} ]; then echo "Already exists: "{q}" (nothing created)"; else mkdir -p {q} && echo Created: {q}; fi')
 
     def _handle_delete(self, data: dict) -> None:
-        path = (data.get("path") or "").strip()
+        path = user_path(data.get("path") or "")
         recursive = data.get("recursive", False)
         if not path:
             json_response(self,400, {"error": "Missing 'path'"})
@@ -717,7 +731,7 @@ class MCPHandler(BaseHTTPRequestHandler):
             execute_streaming(self, f'echo Failed to move: {shell_quote(path)}')
 
     def _handle_search(self, data: dict) -> None:
-        path = (data.get("path") or ".").strip()
+        path = user_path(data.get("path") or ".")
         pattern = (data.get("pattern") or data.get("query") or data.get("name") or "*").strip()
         if not is_safe_path(path):
             json_response(self,403, {"error": "Path not allowed"})

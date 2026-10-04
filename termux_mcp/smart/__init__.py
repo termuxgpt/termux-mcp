@@ -61,6 +61,34 @@ SMART_TOOL_DEFS = [
      "description": "Install dependencies and run (or test) a project in one call; failures come back with "
                     "error codes and known fixes.",
      "inputSchema": _s(path=STR, install=BOOL, test=BOOL, timeout=INT, confirmed=BOOL)},
+    {"name": "briefing", "category": "diagnose",
+     "description": "One-glance daily status: battery and its health, free storage, package updates, services that "
+                    "are down, automations that failed in the last day.",
+     "inputSchema": _s()},
+    {"name": "net_check", "category": "diagnose",
+     "description": "Network doctor: router ping, DNS time, web latency, download speed, Wi-Fi signal, with a "
+                    "plain-language verdict (good|slow|problem|offline) and what to do.",
+     "inputSchema": _s(speed=BOOL)},
+    {"name": "services_overview", "category": "services",
+     "description": "Everything running: managed services (up/down, port, local URL, log tail, watched) and open "
+                    "public links (tunnels).",
+     "inputSchema": _s()},
+    {"name": "service_watch", "category": "services",
+     "description": "Watchdog for a managed service: if it dies, restart it and notify. action watch|stop.",
+     "inputSchema": _req(_s(name=STR, action={"type": "string", "enum": ["watch", "stop"]}, every_min=INT), "name")},
+    {"name": "git_commit", "category": "git",
+     "description": "Commit (and optionally push) all changes in a repo. Without message returns the diff to write "
+                    "one; without confirmed returns a preview (branch, files). Call again with confirmed: true.",
+     "inputSchema": _s(path=STR, message=STR, push=BOOL, confirmed=BOOL)},
+    {"name": "security_check", "category": "diagnose",
+     "description": "Check this phone's own Termux setup: termux-mcp exposure, servers reachable from the network, "
+                    "sshd password login, private key permissions, API keys left in your project files (masked), "
+                    "pending package upgrades. Read-only; each problem comes with a fix.",
+     "inputSchema": _s()},
+    {"name": "storage_report", "category": "storage",
+     "description": "Where the phone's space goes: disk use, biggest folders (DCIM, Download, WhatsApp media, Termux), "
+                    "largest files, old downloads and Termux caches that can be freed. Read-only.",
+     "inputSchema": _s(top=INT, min_mb=INT, old_days=INT)},
     {"name": "storage_clean", "category": "storage",
      "description": "Measure then free space: apt_cache, pip_cache, npm_cache, tmp, pycache, old_logs, trash. "
                     "dry_run (default) reports reclaimable size; logs/pycache go to trash (undoable).",
@@ -265,6 +293,11 @@ SMART_TOOL_DEFS = [
     {"name": "share_to", "category": "device",
      "description": "Open the Android share sheet for a file or text, or open a URL.",
      "inputSchema": _s(path=STR, text=STR, url=STR, action=STR, title=STR)},
+    {"name": "doc_tool", "category": "media",
+     "description": "Documents and photos: pdf_merge (inputs -> output.pdf), images_to_pdf, image_compress "
+                    "(inputs -> output dir, quality, max_width), pdf_text (extract text). Missing packages come back as fixes.",
+     "inputSchema": _req(_s(action={"type": "string", "enum": ["pdf_merge", "images_to_pdf", "image_compress", "pdf_text"]},
+                            inputs=ARR, output=STR, quality=INT, max_width=INT, overwrite=BOOL), "action", "inputs")},
     {"name": "media_convert", "category": "media",
      "description": "ffmpeg presets: audio, compress, mp4, gif, thumbnail, resize, trim; background: true runs "
                     "it as a task, action status shows the percent.",
@@ -620,6 +653,27 @@ def _dispatch(name: str, p: dict) -> dict:
     if name == "project_run":
         return intent_tools.project_run(p.get("path", ""), b(p.get("install"), True), b(p.get("test")),
                                         int(p.get("timeout") or 300), b(p.get("confirmed")))
+    if name == "briefing":
+        from . import daily
+        return daily.briefing()
+    if name == "net_check":
+        from . import daily
+        return daily.net_check(b(p.get("speed"), True))
+    if name == "services_overview":
+        return intent_tools.services_overview()
+    if name == "service_watch":
+        return intent_tools.service_watch(p.get("name", ""), p.get("action", "watch"), int(p.get("every_min") or 2))
+    if name == "git_commit":
+        return intent_tools.git_commit(p.get("path", ""), p.get("message", ""), b(p.get("push")), b(p.get("confirmed")))
+    if name == "security_check":
+        from . import hardening
+        return hardening.check()
+    if name == "doc_tool":
+        return power.doc_tool(p.get("action", ""), p.get("inputs"), p.get("output", ""), int(p.get("quality") or 75),
+                              int(p.get("max_width") or 1600), b(p.get("overwrite")))
+    if name == "storage_report":
+        return intent_tools.storage_report(int(p.get("top") or 10), int(p.get("min_mb") or 50),
+                                           int(p.get("old_days") or 90))
     if name == "storage_clean":
         return intent_tools.storage_clean(p.get("categories"), b(p.get("dry_run"), True), b(p.get("confirmed")),
                                           p.get("task_id", ""))

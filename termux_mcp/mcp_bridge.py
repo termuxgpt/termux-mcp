@@ -10,6 +10,7 @@ from .handlers.ai_power import handle_smart_install, handle_optimize
 from .handlers.features import (
     handle_system_info, handle_process_list, handle_process_kill,
     handle_cron_add, handle_cron_list, handle_cron_remove,
+    handle_cron_status, handle_cron_toggle, handle_cron_update, handle_cron_setup,
     handle_diff, handle_health, handle_cloud_sync, handle_git_pr,
     handle_recipe_list, handle_recipe_run, handle_recipe_save,
     handle_context, handle_context_save,
@@ -220,6 +221,10 @@ _MODULE_ROUTES = {
     "cron_add": handle_cron_add,
     "cron_list": handle_cron_list,
     "cron_remove": handle_cron_remove,
+    "cron_status": handle_cron_status,
+    "cron_toggle": handle_cron_toggle,
+    "cron_update": handle_cron_update,
+    "cron_setup": handle_cron_setup,
     "cloud_sync": handle_cloud_sync,
     "diff": handle_diff,
     "smart_install": handle_smart_install,

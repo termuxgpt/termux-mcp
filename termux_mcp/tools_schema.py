@@ -335,7 +335,7 @@ OPENAI_TOOLS = [
         "type": "function",
         "function": {
             "name": "cron_add",
-            "description": "Add a cron job. Schedule format: 0 3 * * * for daily at 3am.",
+            "description": "Schedule a recurring job (an Automation). Schedule is 5 cron fields: '0 9 * * *' = daily 9:00, '0 9 * * 1-5' = weekdays 9:00, '*/30 * * * *' = every 30 min. Output and exit code of every run are logged. Returns the job with its id.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -351,7 +351,7 @@ OPENAI_TOOLS = [
         "type": "function",
         "function": {
             "name": "cron_list",
-            "description": "List all cron jobs.",
+            "description": "List scheduled jobs as JSON: id, label, schedule, command, paused, last_run, last_exit, log_tail; plus whether cron is installed and running.",
             "parameters": {"type": "object", "properties": {}}
         }
     },
@@ -359,11 +359,12 @@ OPENAI_TOOLS = [
         "type": "function",
         "function": {
             "name": "cron_remove",
-            "description": "Remove cron jobs matching a label, or all if no label.",
+            "description": "Remove one scheduled job by id (from cron_list), or by exact label.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "label": {"type": "string", "description": "Label to match for removal"}
+                    "id": {"type": "string", "description": "Job id from cron_list"},
+                    "label": {"type": "string", "description": "Exact label, if no id"}
                 }
             }
         }

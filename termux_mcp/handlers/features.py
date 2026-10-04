@@ -3,6 +3,7 @@ import re
 import time
 from typing import TYPE_CHECKING
 
+from .. import automations
 from ..safety import snapshot_before_write
 from ..shell import execute_streaming, get_current_dir
 from ..utils import (shell_quote, require_int, is_safe_path, is_sensitive_path,
@@ -61,54 +62,42 @@ def handle_process_kill(handler: "BaseHTTPRequestHandler", data: dict) -> None:
 
 
 def handle_cron_add(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    schedule = data.get("schedule", "").strip()
-    command = data.get("command", "").strip()
-    label = data.get("label", "termux_task").strip()
-
-    if not schedule or not command:
-        json_response(handler, 400, {"error": "schedule and command required"})
-        return
-
-    if not CRON_SCHEDULE_RE.fullmatch(schedule):
-        json_response(handler, 400, {
-            "error": "Invalid schedule - expected 5 cron fields, e.g. '*/5 * * * *'"})
-        return
-
-    cmd = (
-        f'echo {shell_quote("Adding cron job: " + label)};'
-        f'(crontab -l 2>/dev/null; echo {shell_quote("# " + label)};'
-        f'echo {shell_quote(schedule + " " + command)}) | crontab - 2>&1 && '
-        f'echo {shell_quote("Cron job added: " + schedule + " " + command)} '
-        f'|| echo "Failed. Install: pkg install cronie termux-services"'
-    )
-    execute_streaming(handler, cmd)
+    result = automations.add(data.get("schedule", ""), data.get("command", ""),
+                             data.get("label", ""), confirmed=bool(data.get("confirmed")))
+    json_response(handler, 400 if result.get("error") and not result.get("requires_confirmation") else 200, result)
 
 
 def handle_cron_list(handler: "BaseHTTPRequestHandler", _data: dict) -> None:
-    cmd = (
-        'echo "Cron Jobs:";'
-        'echo "---";'
-        'crontab -l 2>&1 || echo "No cron jobs. Install: pkg install cronie termux-services"'
-    )
-    execute_streaming(handler, cmd)
+    json_response(handler, 200, automations.status())
+
+
+def handle_cron_status(handler: "BaseHTTPRequestHandler", _data: dict) -> None:
+    json_response(handler, 200, automations.status())
 
 
 def handle_cron_remove(handler: "BaseHTTPRequestHandler", data: dict) -> None:
-    label = data.get("label", "").strip()
+    job_id = str(data.get("id", "")).strip()
+    label = str(data.get("label", "")).strip()
+    if not job_id and not label:
+        json_response(handler, 400, {"error": "id or label required"})
+        return
+    result = automations.remove(job_id=job_id, label=label)
+    json_response(handler, 400 if result.get("error") else 200, result)
 
-    if label:
-        safe = shell_quote(label)
-        cmd = (
-            f'crontab -l 2>/dev/null | grep -v {safe} | crontab - 2>&1 && '
-            f'echo {shell_quote("Removed cron jobs matching: " + label)} '
-            f'|| echo "Failed to remove"'
-        )
-    else:
-        cmd = (
-            'crontab -r 2>&1 && echo "All cron jobs removed" '
-            '|| echo "No cron jobs to remove"'
-        )
-    execute_streaming(handler, cmd)
+
+def handle_cron_toggle(handler: "BaseHTTPRequestHandler", data: dict) -> None:
+    result = automations.toggle(str(data.get("id", "")), bool(data.get("paused")))
+    json_response(handler, 400 if result.get("error") else 200, result)
+
+
+def handle_cron_update(handler: "BaseHTTPRequestHandler", data: dict) -> None:
+    result = automations.update(str(data.get("id", "")), data.get("schedule", ""), data.get("command", ""),
+                                data.get("label", ""), confirmed=bool(data.get("confirmed")))
+    json_response(handler, 400 if result.get("error") and not result.get("requires_confirmation") else 200, result)
+
+
+def handle_cron_setup(handler: "BaseHTTPRequestHandler", _data: dict) -> None:
+    execute_streaming(handler, automations.SETUP_CMD if not automations.crontab_available() else automations.START_CMD)
 
 
 def handle_diff(handler: "BaseHTTPRequestHandler", data: dict) -> None:

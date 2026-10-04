@@ -21,6 +21,30 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
 
+def keep_awake() -> None:
+    """Hold a Termux wake lock while the server runs.
+
+    On low-RAM phones Android freezes or kills Termux a few seconds after the
+    user switches to the app, so the server stops answering until Termux is
+    brought to the front again. A wake lock keeps Termux's foreground service
+    — and this server — running. TERMUX_MCP_WAKELOCK=off disables it.
+    """
+    import os
+    import shutil
+    import subprocess
+    if os.environ.get("TERMUX_MCP_WAKELOCK", "").strip().lower() in ("off", "0", "false", "no"):
+        return
+    if not shutil.which("termux-wake-lock"):
+        return
+    try:
+        subprocess.Popen(["termux-wake-lock"], stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+        logger.info("Wake lock held so Android keeps the server running "
+                    "(TERMUX_MCP_WAKELOCK=off to disable)")
+    except OSError:
+        pass
+
+
 def run() -> None:
     if len(sys.argv) > 1 and sys.argv[1] in ("token", "help", "-h", "--help"):
         sys.exit(auth.cli(sys.argv[1:]))
@@ -43,6 +67,8 @@ def run() -> None:
             HOST,
         )
         sys.exit(1)
+
+    keep_awake()
 
     logger.info("Freeing port %d if occupied...", PORT)
     kill_port(PORT)

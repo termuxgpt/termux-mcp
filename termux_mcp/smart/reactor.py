@@ -81,6 +81,11 @@ def evaluate(cond: dict, rule: dict, cache: dict) -> bool:
             from .intent_tools import port_listening
             if port_listening(int(want)):
                 return False
+        elif key == "service_down":
+            from .intent_tools import service_table
+            rows = {r[0]: r[3] for r in service_table()}
+            if str(want) not in rows or rows[str(want)]:
+                return False
         elif key == "storage_below_gb":
             if shutil.disk_usage(base.home()).free / 1e9 >= float(want):
                 return False
@@ -134,6 +139,11 @@ def _log_match(want: dict, rule: dict) -> bool:
 def _fire(rule: dict) -> str:
     action = rule.get("action", {})
     out = []
+    if action.get("restart_service"):
+        from .intent_tools import service_ensure
+        r = service_ensure(str(action["restart_service"]), restart=True)
+        rule["_last_match"] = "restarted" if r.get("up") else "restart failed"
+        out.append(f"restart {'ok' if r.get('up') else 'failed'}")
     if action.get("cmd"):
         res = base.sh(action["cmd"], timeout=600, confirmed=bool(rule.get("confirmed")))
         out.append(f"cmd exit {res.exit}")
@@ -196,10 +206,10 @@ def ensure_running() -> None:
 def add(when: dict, action: dict, name: str = "", confirmed: bool = False) -> dict:
     if not isinstance(when, dict) or not when:
         return {"ok": False, "errors": [{"code": "E_ARGS", "msg": "when: {condition: value, ...}"}]}
-    if not isinstance(action, dict) or not (action.get("cmd") or action.get("notify")):
-        return {"ok": False, "errors": [{"code": "E_ARGS", "msg": "action: {cmd} and/or {notify}"}]}
+    if not isinstance(action, dict) or not (action.get("cmd") or action.get("notify") or action.get("restart_service")):
+        return {"ok": False, "errors": [{"code": "E_ARGS", "msg": "action: {cmd}, {notify} and/or {restart_service}"}]}
     known = {"battery_below", "charging", "wifi", "at", "every_min", "file_changed", "port_down", "storage_below_gb",
-             "log_match"}
+             "log_match", "service_down"}
     bad = sorted(set(when) - known)
     if bad:
         return {"ok": False, "errors": [{"code": "E_ARGS", "msg": f"unknown condition(s): {bad}"}],

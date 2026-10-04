@@ -469,6 +469,77 @@ def _human(n: int) -> str:
     return f"{n:.1f}TB"
 
 
+SHARED_FOLDERS = ("DCIM", "Pictures", "Movies", "Download", "Music", "Documents",
+                  "Android/media/com.whatsapp/WhatsApp/Media", "WhatsApp/Media", "Telegram")
+
+
+def _shared_root() -> str:
+    for root in (os.path.join(base.home(), "storage", "shared"), "/storage/emulated/0", "/sdcard"):
+        if os.path.isdir(root) and os.access(root, os.R_OK):
+            return root
+    return ""
+
+
+def storage_report(top: int = 10, min_mb: int = 50, old_days: int = 90) -> dict:
+    home = base.home()
+    root = _shared_root()
+    usage_path = root or home
+    try:
+        du = shutil.disk_usage(usage_path)
+        disk = {"total": _human(du.total), "used": _human(du.used), "free": _human(du.free),
+                "used_pct": round(du.used * 100 / du.total) if du.total else 0}
+    except OSError:
+        disk = {}
+    folders = []
+    termux = _du(home) if os.path.isdir(home) else 0
+    folders.append({"name": "Termux home", "path": home, "bytes": termux, "size": _human(termux)})
+    big, old_total, old_count = [], 0, 0
+    cutoff = time.time() - int(old_days) * 86400
+    if root:
+        for rel in SHARED_FOLDERS:
+            path = os.path.join(root, rel)
+            if os.path.isdir(path):
+                n = _du(path)
+                if n:
+                    folders.append({"name": rel.split("/")[-1] if "WhatsApp" not in rel else "WhatsApp media",
+                                    "path": path, "bytes": n, "size": _human(n)})
+        floor = int(min_mb) * 1024 * 1024
+        deadline = time.time() + 20
+        for dirpath, dirnames, filenames in os.walk(root):
+            if time.time() > deadline:
+                break
+            dirnames[:] = [d for d in dirnames
+                           if not d.startswith(".")
+                           and not (os.path.basename(dirpath) == "Android" and d in ("data", "obb"))]
+            for f in filenames:
+                full = os.path.join(dirpath, f)
+                try:
+                    st = os.stat(full)
+                except OSError:
+                    continue
+                if st.st_size >= floor:
+                    big.append({"path": full, "name": f, "bytes": st.st_size, "size": _human(st.st_size),
+                                "modified": int(st.st_mtime)})
+                if os.path.basename(dirpath) == "Download" and st.st_mtime < cutoff:
+                    old_total += st.st_size
+                    old_count += 1
+    folders.sort(key=lambda x: -x["bytes"])
+    big.sort(key=lambda x: -x["bytes"])
+    clean = storage_clean(dry_run=True)
+    return {
+        "ok": True,
+        "shared_storage": bool(root),
+        "disk": disk,
+        "folders": folders,
+        "largest_files": big[:max(1, int(top))],
+        "old_downloads": {"count": old_count, "bytes": old_total, "size": _human(old_total), "days": int(old_days)},
+        "termux_reclaimable": clean.get("reclaimable", "0B"),
+        "summary": (f"{disk.get('used', '?')} of {disk.get('total', '?')} used; " if disk else "")
+                   + (f"biggest: {folders[0]['name']} {folders[0]['size']}" if folders else "")
+                   + ("" if root else " (shared storage not linked: run termux-setup-storage)"),
+    }
+
+
 def storage_clean(categories=None, dry_run: bool = True, confirmed: bool = False,
                   task_id: str = "") -> dict:
     cats = _categories()
@@ -576,3 +647,93 @@ def git_sync(path: str = "", pull: bool = True) -> dict:
         parts.append("not pulled (local changes)")
     body["summary"] = ", ".join(parts)
     return body
+
+
+
+def _tail(path: str, n: int = 6) -> list:
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            return [line.rstrip("\n") for line in handle.readlines()[-n:]]
+    except OSError:
+        return []
+
+
+def services_overview() -> dict:
+    from . import power, reactor
+    watched = {}
+    for r in reactor.list_rules().get("rules", []):
+        rule_name = str(r.get("name", ""))
+        if rule_name.startswith("watchdog:"):
+            watched[rule_name[len("watchdog:"):]] = r.get("id")
+    services = []
+    for name, cmd, port, pid, updated in service_table():
+        log = os.path.join(_svc_dir(), re.sub(r"[^\w.-]", "_", name or "") + ".log")
+        services.append({"name": name, "cmd": cmd, "port": port, "pid": pid, "up": bool(pid),
+                         "url": f"http://localhost:{port}" if port else "", "updated": updated,
+                         "watched": name in watched, "watch_id": watched.get(name, ""), "log_tail": _tail(log)})
+    tunnels = power.tunnel(action="list").get("tunnels", [])
+    up = sum(1 for s in services if s["up"])
+    return {"ok": True, "services": services, "tunnels": tunnels,
+            "summary": f"{up}/{len(services)} service(s) up, {len(tunnels)} public link(s)"}
+
+
+def service_watch(name: str, action: str = "watch", every_min: int = 2) -> dict:
+    from . import reactor
+    if action == "stop":
+        removed = 0
+        for r in reactor.list_rules().get("rules", []):
+            if r.get("name") == f"watchdog:{name}":
+                removed += reactor.remove(r["id"]).get("removed", 0)
+        return {"ok": True, "removed": removed, "summary": f"stopped watching {name}"}
+    if name not in {r[0] for r in service_table()}:
+        return {"ok": False, "errors": [{"code": "E_NO_SERVICE", "msg": f"no service {name}; start it with service_ensure"}]}
+    for r in reactor.list_rules().get("rules", []):
+        if r.get("name") == f"watchdog:{name}":
+            return {"ok": True, "id": r["id"], "summary": f"{name} is already watched"}
+    return reactor.add({"service_down": name, "every_min": max(1, int(every_min or 2))},
+                       {"restart_service": name, "notify": f"{name} stopped: {{match}}"},
+                       name=f"watchdog:{name}")
+
+
+def _repo(path: str) -> str:
+    p = str(path or ".").strip()
+    if p.startswith("~"):
+        return os.path.join(base.home(), p[1:].lstrip("/"))
+    return os.path.abspath(p)
+
+
+def git_commit(path: str = "", message: str = "", push: bool = False, confirmed: bool = False) -> dict:
+    repo = _repo(path)
+    if not os.path.isdir(os.path.join(repo, ".git")):
+        return {"ok": False, "errors": [{"code": "E_NOT_REPO", "msg": f"{repo} is not a git repository"}]}
+    q = shlex.quote
+    st = base.sh(f"git -C {q(repo)} status --porcelain=v1 -b", timeout=30, check_risk=False)
+    lines = st.out.splitlines()
+    branch = lines[0][3:].split("...")[0] if lines and lines[0].startswith("##") else ""
+    changed = [line[3:] for line in lines[1:] if line.strip()]
+    preview = {"repo": repo, "branch": branch, "files": changed[:50], "file_count": len(changed),
+               "message": message.strip(), "push": bool(push)}
+    if not changed:
+        return {"ok": True, "nothing_to_commit": True, **preview, "summary": "nothing to commit"}
+    if not message.strip():
+        diff = base.sh(f"git -C {q(repo)} diff HEAD 2>/dev/null | head -c 6000", timeout=30, check_risk=False).out
+        return {"ok": True, "needs_message": True, **preview, "diff_excerpt": diff,
+                "summary": "write a one-line commit message from diff_excerpt, then call again with message"}
+    if not confirmed:
+        return {"ok": True, "needs_confirmation": True, **preview,
+                "summary": f"will commit {len(changed)} file(s) on {branch}" + (" and push" if push else "")}
+    c = base.sh(f"git -C {q(repo)} add -A && git -C {q(repo)} commit -m {q(message.strip())}", timeout=60,
+                confirmed=True)
+    if not c.ok:
+        return {"ok": False, **preview, "errors": [{"code": "E_GIT", "msg": c.text.strip()[-300:]}]}
+    sha = base.sh(f"git -C {q(repo)} rev-parse --short HEAD", timeout=10, check_risk=False).out.strip()
+    pushed = None
+    if push:
+        pr = base.sh(f"git -C {q(repo)} push", timeout=180, confirmed=True)
+        pushed = pr.ok
+        if not pr.ok:
+            return {"ok": False, **preview, "commit": sha,
+                    "errors": [{"code": "E_PUSH", "msg": pr.text.strip()[-300:]}],
+                    "summary": f"committed {sha} but push failed"}
+    return {"ok": True, **preview, "commit": sha, "pushed": pushed,
+            "summary": f"committed {sha} on {branch}" + (" and pushed" if pushed else "")}
